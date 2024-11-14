@@ -28,7 +28,7 @@ import getpass
 # some defaults for this project
 xnathost = 'https://xnatpro.ibic.washington.edu'
 project = 'GLIMPSE-OSA'
-dcm2niixPath = '/usr/bin/dcm2niix'
+dcm2niixPath = '/usr/bin'
 
 # this greates path to dcm2niix if added and cloned from github and saved in bin folder
 # thisfilepath = os.path.abspath(os.path.dirname(__file__))
@@ -62,10 +62,10 @@ def niftiRename2Standard(scanlist,niftipath, outpath):
             value_list = scans[key]
             #get list of matching files using regular expression (glob)
             currscannum = scanlist[value_list[1]]
-            if currscannum is None:
+            if currscannum == 'NA':
                 print('No scan number for '+ key+', skipping')
                 continue;
-            regex_name = niftipath + '/*' + value_list[0]+'*_'+ currscannum+'0001*.nii*'
+            regex_name = niftipath + '/*' + value_list[0]+'*_'+ currscannum+'01*.nii*'
             files = sorted(glob.glob(regex_name))
 
             #build joint list of files and the TE stored in the description
@@ -108,7 +108,7 @@ def niftiRename2Standard(scanlist,niftipath, outpath):
             value_list = scans[key]
             # use regular expression matching (glob)
             currscannum = scanlist[value_list[1]]
-            if currscannum is None:
+            if currscannum == 'NA':
                 print('No scan number for '+ key+', skipping')
                 continue;
             regex_name = niftipath + '/*' + value_list[0]+'*_'+ currscannum+'01*.nii*'
