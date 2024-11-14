@@ -49,7 +49,7 @@ def niftiRename2Standard(scanlist,niftipath, outpath):
     'ivim_app':['DTI_IVIM_b0_APP', 6],
     'measl_650':['MEASL_650',7],
     'measl_950':['MEASL_950',8],
-    'measl_m0':['MEASL_M0_NEW',9],
+    'measl_m0':['MEASL_M0_NEW',9]}
              
     print(', '.join(scanlist))
 
