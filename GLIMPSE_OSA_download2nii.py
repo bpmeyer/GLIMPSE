@@ -23,6 +23,7 @@ import argparse
 import shutil
 import certifi
 import requests
+import getpass
 
 # some defaults for this project
 xnathost = 'https://xnatpro.ibic.washington.edu'
@@ -36,6 +37,7 @@ dcm2niixPath = '/usr/bin/dcm2niix'
 
 # will prompt for password
 xnatusername = input("Enter your xnat username: ")
+xnatpassword = getpass.getpass("Enter your xnat password: ")
 
 def niftiRename2Standard(scanlist,niftipath, outpath):
 
@@ -101,7 +103,6 @@ def niftiRename2Standard(scanlist,niftipath, outpath):
                 print('mv ' + orig_file + ' ' + newname)
                 shutil.copy(orig_file, newname)
 
-
         # single one-to-one file mapping (not multi-echo)
         else:
             value_list = scans[key]
@@ -120,11 +121,9 @@ def niftiRename2Standard(scanlist,niftipath, outpath):
             newname = os.path.join(outdir, key +  ''.join(origSuffix))
             #print(regex_name)
             if not os.path.isdir(outdir):
-            os.mkdir(outdir)
-
-            print('mv ' + orig_file + ' ' + newname)
-            shutil.copy(orig_file, newname)
-
+                os.mkdir(outdir)
+                print('mv ' + orig_file + ' ' + newname)
+                shutil.copy(orig_file, newname)
             else:
                 print('no files for' + regex_name)
 
@@ -168,7 +167,7 @@ def main():
 
 
         print('Opening xnat connection')
-        with xnat.connect(xnathost, user=xnatusername, verify=False) as connection:
+        with xnat.connect(xnathost, user=xnatusername, password=xnatpassword) as connection:
 
             for row in reader:
                 print(', '.join(row))
