@@ -75,10 +75,11 @@ def niftiRename2Standard(scanlist,niftipath, outpath):
                 header = nii_img.header
                 TE = header['descrip']
                 #split the descrip info here with delimiters / = ;, and get the 2nd item ([1]) which is the TE
-                teval = re.split(r'\+|=+|;',str(TE))
+                teval = re.split(r"[;=\s]+",str(TE))
+                #print(teval)
                 #convert it to a float value so it can be sorted
                 TElist.append(float(teval[1]))
-            #print(TElist)
+                #print(TElist)
 
             #zip the matching lists into a single list, sort by the 2nd set, then output the sorted filenames
             filesTEs = zip(files, TElist)
