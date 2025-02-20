@@ -23,6 +23,7 @@ import shutil
 import certifi
 import requests
 import getpass
+import json
 
 # some defaults for this project
 xnathost = 'https://xnatpro.ibic.washington.edu'
@@ -150,7 +151,65 @@ def download_session(connection, project, subject, session, outputdir):
 
     return True
 
+def clean_and_merge_csf_qf(niipath, outpath):
+    csf_folder = os.path.join(os.path.dirname(niipath), 'csf_qf')
+    os.makedirs(csf_folder, exist_ok=True)
 
+    if not os.path.exists(niipath):
+        print(f"Error: niipath '{niipath}' does not exist.")
+        return
+
+    os.makedirs(csf_folder, exist_ok=True)
+    
+    all_files = os.listdir(niipath)
+    print(f"Files in niipath ({niipath}): {all_files}")
+
+    # Find all NIfTI files starting with "scans_WIP_CSF" in the niipath
+    nii_files = [f for f in all_files if f.startswith("scans_WIP_CSF") and (f.endswith(".nii.gz") or f.endswith(".json"))]
+    
+    if not nii_files:
+        print("No matching NIfTI files found.")
+        return
+
+    for file in nii_files:
+        src_path = os.path.join(niipath, file)
+        dest_path = os.path.join(csf_folder, file)
+        
+        if os.path.exists(dest_path):
+            base, ext = os.path.splitext(file)
+            counter = 1
+            new_dest_path = os.path.join(csf_folder, f"{base}_{counter}{ext}")
+            while os.path.exists(new_dest_path):
+                counter += 1
+                new_dest_path = os.path.join(csf_folder, f"{base}_{counter}{ext}")
+            shutil.move(src_path, new_dest_path)
+            print(f"Renamed and moved {file} to {dest_path}")
+        else:
+            shutil.move(src_path, dest_path)
+            print(f"Moved {file} to {dest_path}")
+
+    # Rename NIfTI files based on phase and magnitude
+    for file in os.listdir(csf_folder):
+        if file.endswith('.nii.gz') or file.endswith('.json'):
+            file_path = os.path.join(csf_folder, file)
+            base, ext = os.path.splitext(file)
+            base = base.replace('.nii', '')
+            trigger_time = ""
+            
+            json_path = os.path.join(csf_folder, f"{base}.json")
+            if os.path.exists(json_path):
+                with open(json_path, 'r') as json_file:
+                    data = json.load(json_file)
+                    trigger_time = f"_t{data.get('TriggerDelayTime', '')}" if 'TriggerDelayTime' in data else ""
+            
+            if "ph" in base:
+                new_name = f"csf_qf_ph{trigger_time}.nii.gz"
+            else:
+                new_name = f"csf_qf_mag{trigger_time}.nii.gz"
+
+            new_path = os.path.join(csf_folder, new_name)
+            os.rename(file_path, new_path)
+            print(f"Renamed {file} to {new_name}")
 
 def main():
     #get input arguments
@@ -207,6 +266,7 @@ def main():
                     print(dcmcmd)
                     process = subprocess.run(dcmcmd, stdout=subprocess.PIPE,shell=True)
 
+
                 #delete dicom files once converted
                 if os.path.isdir(dcmpath):
                     shutil.rmtree(dcmpath)
@@ -216,11 +276,12 @@ def main():
                     print('Renaming files ' + session)
                     try:
                         niftiRename2Standard(row, niipath, outpath)
+                        clean_and_merge_csf_qf(niipath, outpath)
                     finally:
                         shutil.rmtree(niipath)
                     #delete converted nii files once copied/renamed
 
-
+                    
 
 
 if __name__ == '__main__':
