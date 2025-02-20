@@ -9,7 +9,6 @@ inputfilename, outputfilename
 BPM, 11/14/24: first version
 
 """
-
 import csv
 import os  # system functions
 import re
