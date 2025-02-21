@@ -211,6 +211,81 @@ def clean_and_merge_csf_qf(niipath, outpath):
             os.rename(file_path, new_path)
             print(f"Renamed {file} to {new_name}")
 
+def restructure_folders():
+    current_dir = os.getcwd()
+    folders = [f for f in os.listdir(current_dir) if os.path.isdir(f) and f.startswith("GLOtwo")]
+
+    if not folders:
+        print("No matching folders found.")
+        return
+
+    # Extract subject ID from the first folder name (assumes consistent naming)
+    subject_id = folders[0][6:9]  # Extracts '001' from 'GLOtwo001_v1'
+    subject_folder = os.path.join(current_dir, f"sub-{subject_id}")
+
+    # Create subject folder if it doesn't exist
+    os.makedirs(subject_folder, exist_ok=True)
+
+    for folder in folders:
+        old_path = os.path.join(current_dir, folder)
+        
+        # Check if the folder contains a subfolder with the same name (GLOtwo001_v1/GLOtwo001_v2 structure)
+        inner_folder = os.path.join(old_path, folder)
+        if os.path.isdir(inner_folder):
+            # Move contents from the inner folder to the parent folder (i.e., flatten it)
+            for item in os.listdir(inner_folder):
+                item_path = os.path.join(inner_folder, item)
+                shutil.move(item_path, old_path)
+
+            # Remove the now empty inner folder
+            os.rmdir(inner_folder)
+
+        # Determine the new folder name (Visit 1 or Visit 2)
+        if "v1" in folder:
+            new_name = "Visit 1"
+        elif "v2" in folder:
+            new_name = "Visit 2"
+        else:
+            continue  # Skip if the folder doesn't match expected format
+
+        new_path = os.path.join(current_dir, new_name)
+
+        # Rename the folder in place
+        os.rename(old_path, new_path)
+
+        # Move the renamed folder into the subject folder
+        final_path = os.path.join(subject_folder, new_name)
+        os.rename(new_path, final_path)
+
+        anat_folder = os.path.join(final_path, "anat")
+        os.makedirs(anat_folder, exist_ok=True)
+
+        # Move the t1 and t2 folders inside 'anat'
+        for subfolder in ['t1', 't2']:
+            subfolder_path = os.path.join(final_path, subfolder)
+            if os.path.isdir(subfolder_path):
+                shutil.move(subfolder_path, anat_folder)
+
+        measl_folders = [f for f in os.listdir(final_path) if os.path.isdir(os.path.join(final_path, f)) and 'measl' in f]
+        if measl_folders:
+            measl_folder_path = os.path.join(final_path, "measl")
+            os.makedirs(measl_folder_path, exist_ok=True)
+
+            for measl in measl_folders:
+                measl_path = os.path.join(final_path, measl)
+                shutil.move(measl_path, measl_folder_path)
+
+        ivim_folders = [f for f in os.listdir(final_path) if os.path.isdir(os.path.join(final_path, f)) and 'ivim' in f]
+        if ivim_folders:
+            ivim_folder_path = os.path.join(final_path, "ivim")
+            os.makedirs(ivim_folder_path, exist_ok=True)
+
+            for ivim in ivim_folders:
+                ivim_path = os.path.join(final_path, ivim)
+                shutil.move(ivim_path, ivim_folder_path)
+
+    print(f"Folders successfully reorganized under {subject_folder}.")
+
 def main():
     #get input arguments
     parser = argparse.ArgumentParser(description='Prints all files from a certain scan.')
@@ -280,6 +355,7 @@ def main():
                     finally:
                         shutil.rmtree(niipath)
                     #delete converted nii files once copied/renamed
+    restructure_folders()
 
                     
 
