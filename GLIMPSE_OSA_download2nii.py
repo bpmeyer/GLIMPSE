@@ -7,7 +7,7 @@ inputfilename, outputfilename
 
 
 BPM, 11/14/24: first version
-2/25/25: BIDs update
+2/25/25: BIDs update, parrec
 
 """
 import csv
@@ -146,6 +146,27 @@ def download_session(connection, project, subject, session, outputdir):
     except:
         print('xnat download error')
         return False
+    return True
+
+#download parrec session data from xnat
+def download_parrec(connection, project, session, parrec, outputdir):
+    print('Downloading PARREC ' + session + ' from project '+project)
+    xnat_project = connection.projects[project]
+    try:
+        xnat_parrec= xnat_project.resources["PARREC"]
+    except:
+        print('parrec files xnat error')
+        return False
+    try:
+        xnat_parrec_session = xnat_parrec.files[parrec]
+    except:
+        print('Session parrec missing')
+        return False
+    try:
+        xnat_parrec_session.download(outputdir)
+    except:
+        print('xnat parrec download error')
+        return False
 
     return True
 
@@ -175,6 +196,8 @@ def main():
                 subject_id = f"sub-{parts[1].replace("0","")}"
                 session_id = f"ses-{parts[2].replace("v", "0")}"
 
+                parrec= row[10] #.zip file with parrec and physio data
+
                 #these are setup as seperate steps, files can be
                 #downloaded
                 #converted to nifti
@@ -182,12 +205,14 @@ def main():
                 # in successive steps and if one step fails can continue with others.
                 #This is better for early testing for example, not to have to download
                 # if the conversion/processing is not functional.
+                
                 bidspath = os.path.join(subject_id,session_id)
                 currsesspath = os.path.join(subject,session)
                 print(currsesspath)
                 success = True
                 if not os.path.isdir(bidspath):
                     success = download_session(connection, project, subject, session, subject)
+                    success = download_parrec(connection, project, session, parrec, subject)
                     os.makedirs(bidspath, exist_ok=True)
                     os.rename(currsesspath,bidspath)
                     shutil.rmtree(subject)
