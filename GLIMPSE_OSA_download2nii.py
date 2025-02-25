@@ -25,6 +25,7 @@ import certifi
 import requests
 import getpass
 import json
+from zipfile import ZipFile
 
 # some defaults for this project
 xnathost = 'https://xnatpro.ibic.washington.edu'
@@ -209,15 +210,29 @@ def main():
                 bidspath = os.path.join(subject_id,session_id)
                 currsesspath = os.path.join(subject,session)
                 print(currsesspath)
+
                 success = True
                 if not os.path.isdir(bidspath):
                     success = download_session(connection, project, subject, session, subject)
-                    success = download_parrec(connection, project, session, parrec, subject)
                     os.makedirs(bidspath, exist_ok=True)
                     os.rename(currsesspath,bidspath)
                     shutil.rmtree(subject)
                 if success == False:
                     print('Xnat error, skipping.')
+                    continue
+
+                #download parrec zip
+                parrecfile = os.path.join(bidspath,parrec)
+                success = True
+                try:
+                    success = download_parrec(connection, project, session, parrec, parrecfile)
+                    if os.path.isfile(parrecfile):
+                        with ZipFile(parrecfile,'r') as zipobject:
+                            zipobject.extractall(bidspath)
+                        os.remove(parrecfile)
+                except Exception as e:
+                    print(f"Error occurred: {e}")
+                    success = False
                     continue
 
                 dcmpath = os.path.join(bidspath,'scans')
