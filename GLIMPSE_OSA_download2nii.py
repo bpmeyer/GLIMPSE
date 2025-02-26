@@ -48,8 +48,8 @@ def get_suffix(filename):
 def niftiRename2Standard(scanlist,niftipath, outpath):
 
     #these correspond to {generic output name,  acqual sequence name (dicom), column in renaming csv file}
-    scans = {'t1':['MPRAGE_0.8_CS_F',2,'anat'],
-    't2': ['3D_Brain_VIEW_T2_32chSHC_0.8_CS_F',3,'anat'],
+    scans = {'t1w':['MPRAGE_0.8_CS_F',2,'anat'],
+    't2w': ['3D_Brain_VIEW_T2_32chSHC_0.8_CS_F',3,'anat'],
     'csf_qf':['CSF_QF_retrospectivetrigger',4,'qf'],
     'ivim_apa':['DTI_IVIM_14b0_APA', 5,'dwi'],
     'ivim_app':['DTI_IVIM_b0_APP', 6,'dwi'],
@@ -128,6 +128,56 @@ def niftiRename2Standard(scanlist,niftipath, outpath):
                 print('no files for ' + regex_name)
 
 
+def parrecRename2Standard(scanlist,zipfile_dir, outpath):
+
+    #these correspond to {generic output name,  acqual sequence name (dicom), column in renaming csv file}
+    scans = {'measl_650':['MEASL_650',7,'asl'],
+    'measl_950':['MEASL_950',8,'asl'],
+    'measl_m0':['MEASL_M0_NEW',9,'asl'],
+    'psalog':['ScanPsaLog',10,'physio']}
+             
+    print(', '.join(scanlist))
+
+    #for each of the file types/scans we want to rename
+    for key in scans:
+        if key in ['psalog']:
+            value_list = scans[key]
+            physiofile_name = zipfile_dir + '/*.log'
+            physiofiles = sorted(glob.glob(physiofile_name))
+            if physiofiles:
+                for orig_log in physiofiles:
+                    basename = os.path.basename(orig_log).split('.')[0]
+                    physio_outdir = os.path.join(outpath,value_list[2])
+                    physio_newname = os.path.join(physio_outdir,basename +'.log')
+                    if not os.path.isdir(physio_outdir):
+                        os.mkdir(physio_outdir)
+                    shutil.copy(orig_log, physio_newname)
+            else:
+                print('no physio files')
+        else:
+            value_list = scans[key]
+            # use regular expression matching (glob)
+            currscannum = scanlist[value_list[1]]
+            if currscannum == 'NA':
+                print('No scan number for '+ key+', skipping')
+                continue
+            regex_name = zipfile_dir + '/*' + value_list[0]+'*_'+ currscannum+'*.PAR'
+            parfiles = sorted(glob.glob(regex_name))
+            if parfiles:
+                for parorig_file in parfiles:
+                    basename = parorig_file.rsplit(".PAR", 1)[0]
+                    recorig_file = f"{basename}.REC"
+                    outdir = os.path.join(outpath,value_list[2])
+                    par_newname = os.path.join(outdir, key + '.PAR')
+                    rec_newname = os.path.join(outdir, key + '.REC')
+                    if not os.path.isdir(outdir):
+                        os.mkdir(outdir)
+                    shutil.copy(parorig_file, par_newname)
+                    shutil.copy(recorig_file, rec_newname)
+            else:
+                print('no parrec files for' + key)
+
+
 #download a full session data from xnat
 def download_session(connection, project, subject, session, outputdir):
     print('Downloading ' + session + ' from project '+project)
@@ -194,8 +244,8 @@ def main():
                 session = row[1]
                 # Split by letters and underscores
                 parts = re.split(r"[A-Za-z_v]+", subject)
-                subject_id = f"sub-{parts[1].replace("0","")}"
-                session_id = f"ses-{parts[2].replace("v", "0")}"
+                subject_id = f"sub-{parts[1].replace("00","0")}"
+                session_id = f"ses-{parts[2]}"
 
                 parrec= row[10] #.zip file with parrec and physio data
 
@@ -206,30 +256,36 @@ def main():
                 # in successive steps and if one step fails can continue with others.
                 #This is better for early testing for example, not to have to download
                 # if the conversion/processing is not functional.
-                
-                bidspath = os.path.join(subject_id,session_id)
-                currsesspath = os.path.join(subject,session)
+                datadir = 'data'
+                if not os.path.exists(datadir):
+                    os.mkdir(datadir)
+                bidspath = os.path.join(datadir,subject_id,session_id)
+                currssubpath = os.path.join(datadir,subject)
+                currsesspath = os.path.join(currssubpath,session)
                 print(currsesspath)
 
                 success = True
                 if not os.path.isdir(bidspath):
-                    success = download_session(connection, project, subject, session, subject)
+                    success = download_session(connection, project, subject, session, currssubpath)
                     os.makedirs(bidspath, exist_ok=True)
                     os.rename(currsesspath,bidspath)
-                    shutil.rmtree(subject)
+                    shutil.rmtree(currssubpath)
                 if success == False:
                     print('Xnat error, skipping.')
                     continue
 
                 #download parrec zip
-                parrecfile = os.path.join(bidspath,parrec)
+                zipfile_name = f"{row[10]}.zip"
+                zipfile_path = os.path.join(bidspath,zipfile_name)
+                zipfile_dir = os.path.join(bidspath,parrec)
                 success = True
                 try:
-                    success = download_parrec(connection, project, session, parrec, parrecfile)
-                    if os.path.isfile(parrecfile):
-                        with ZipFile(parrecfile,'r') as zipobject:
+                    success = download_parrec(connection, project, session, zipfile_name, zipfile_path)
+                    if os.path.isfile(zipfile_path):
+                        with ZipFile(zipfile_path,'r') as zipobject:
                             zipobject.extractall(bidspath)
-                        os.remove(parrecfile)
+                        os.remove(zipfile_path)
+
                 except Exception as e:
                     print(f"Error occurred: {e}")
                     success = False
@@ -256,9 +312,14 @@ def main():
                     print('Renaming files ' + session)
                     try:
                         niftiRename2Standard(row, niipath, outpath)
-                    finally:
-                        shutil.rmtree(niipath)
-                    #delete converted nii files once copied/renamed
+                        parrecRename2Standard(row, zipfile_dir, outpath)
+                    finally:#delete converted nii files once copied/renamed 
+                        shutil.rmtree(niipath) 
+
+                #delete converted zip files once copied/renamed      
+                if os.path.isdir(zipfile_dir):
+                    shutil.rmtree(zipfile_dir)
+                    
                     
 
 if __name__ == '__main__':
