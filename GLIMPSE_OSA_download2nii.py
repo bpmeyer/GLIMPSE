@@ -203,6 +203,7 @@ def download_session(connection, project, subject, session, outputdir):
 def download_parrec(connection, project, session, parrec, outputdir):
     print('Downloading PARREC ' + session + ' from project '+project)
     xnat_project = connection.projects[project]
+
     try:
         xnat_parrec= xnat_project.resources["PARREC"]
     except:
