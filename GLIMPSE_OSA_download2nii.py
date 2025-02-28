@@ -25,7 +25,11 @@ import certifi
 import requests
 import getpass
 import json
+import sys
 from zipfile import ZipFile
+sys.path.append('/mnt/cina/GLIMPSE_OSA/repo')
+print(os.listdir('/mnt/cina/GLIMPSE_OSA/repo'))
+import get_glimpse_xnat_data as generate_csv
 
 # some defaults for this project
 xnathost = 'https://xnatpro.ibic.washington.edu'
@@ -40,6 +44,7 @@ dcm2niixPath = '/usr/bin'
 # will prompt for password
 xnatusername = input("Enter your xnat username: ")
 xnatpassword = getpass.getpass("Enter your xnat password: ")
+print('first pass')
 
 def get_suffix(filename):
     match = re.search(r"\.nii(\.gz)?$", filename)
@@ -223,6 +228,9 @@ def download_parrec(connection, project, session, parrec, outputdir):
     return True
 
 def main():
+    print('csv script running')
+    subprocess.run(['python', '/mnt/cina/GLIMPSE_OSA/repo/get_glimpse_xnat_data.py', xnatusername, xnatpassword])
+    print('done csv script')
     #get input arguments
     parser = argparse.ArgumentParser(description='Prints all files from a certain scan.')
     parser.add_argument('-f', type=str, required=False, help='scanlogcsv',default='MRIScanLog.csv')

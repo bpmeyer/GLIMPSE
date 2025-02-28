@@ -12,12 +12,11 @@ import xnat
 import getpass
 import os
 import re
+import sys
 
 XNAT_HOST = 'https://xnatpro.ibic.washington.edu'
 PROJECT = 'GLIMPSE-OSA'
 
-xnat_username = input("Enter your XNAT username: ")
-xnat_password = getpass.getpass("Enter your XNAT password: ")
 
 SCAN_TYPES = ['T1', 'T2', 'CSF_QF', 'IVIM_APA', 'IVIM_APP', 'MEASL_650', 'MEASL_950', 'MEASL_M0', 'parrec']
 
@@ -38,7 +37,7 @@ def trim_scan_id(scan_id):
     print(f"Trim: {scan_id}")
     return scan_id[:-2]
 
-def fetch_xnat_data():
+def fetch_xnat_data(xnat_username, xnat_password):
     data = []
    
     print("Connecting to XNAT...")
@@ -97,7 +96,9 @@ def write_to_csv(data, filename='MRIScanLog.csv'):
     print(f"\nSaved: {abs_path}")
 
 def main():
-    scan_data = fetch_xnat_data()
+    xnat_username = sys.argv[1]
+    xnat_password = sys.argv[2]
+    scan_data = fetch_xnat_data(xnat_username, xnat_password)
     print(f"found {len(scan_data)} entries.")
     write_to_csv(scan_data)
 
