@@ -14,11 +14,12 @@ import os
 import re
 import sys
 
+
 XNAT_HOST = 'https://xnatpro.ibic.washington.edu'
 PROJECT = 'GLIMPSE-OSA'
 
 
-SCAN_TYPES = ['T1', 'T2', 'CSF_QF', 'IVIM_APA', 'IVIM_APP', 'MEASL_650', 'MEASL_950', 'MEASL_M0', 'parrec']
+SCAN_TYPES = ['MPRAGE', 'T2', 'CSF_QF', 'IVIM_APA', 'IVIM_APP', 'MEASL_650', 'MEASL_950', 'MEASL_M0', 'parrec']
 
 def extract_parrec_subject(session_label):
     print(f"Get parrec: {session_label}")
@@ -32,10 +33,6 @@ def extract_parrec_subject(session_label):
             return f"{base_id}_{int(version)}"
     else:
         return session_label
-
-def trim_scan_id(scan_id):
-    print(f"Trim: {scan_id}")
-    return scan_id[:-2]
 
 def fetch_xnat_data(xnat_username, xnat_password):
     data = []
@@ -52,32 +49,15 @@ def fetch_xnat_data(xnat_username, xnat_password):
                 scan_info = {scan_type: 'NA' for scan_type in SCAN_TYPES}
                 scan_info['subject'] = subject.label
                 scan_info['session'] = session.label
-               
-                for scan in session.scans.values():
-                    scan_type = scan.type.upper().strip()
-                    print(f"Scan: {scan_type}, ID: {scan.id}")
-                    scan_id_trimmed = trim_scan_id(scan.id)
 
-                    if 'AX' in scan_type:
-                        scan_info['T1'] = scan_id_trimmed
-                    elif 'T2' in scan_type:
-                        scan_info['T2'] = scan_id_trimmed
-                    elif 'CSF_QF' in scan_type:
-                        scan_info['CSF_QF'] = scan_id_trimmed
-                    elif scan_type.endswith('APA'):
-                        scan_info['IVIM_APA'] = scan_id_trimmed
-                    elif scan_type.endswith('APP'):
-                        scan_info['IVIM_APP'] = scan_id_trimmed
-                    elif 'MEASL_650' in scan_type:
-                        scan_info['MEASL_650'] = scan_id_trimmed
-                    elif 'MEASL_950' in scan_type:
-                        scan_info['MEASL_950'] = scan_id_trimmed
-                    elif 'MEASL_M0' in scan_type:
-                        scan_info['MEASL_M0'] = scan_id_trimmed
-                    elif 'parrec' in scan_type:
-                        scan_info['parrec'] = extract_parrec_subject(session.label)
-                       
-                    scan_info['parrec'] = extract_parrec_subject(session.label)
+                for scan in session.scans.values():
+                    scan_type = scan.type
+                    scan_id = scan.id
+
+                    for key in SCAN_TYPES:
+                        if key in scan_type:
+                            scan_info[key] = (extract_parrec_subject(session.label) if key == 'parrec' else scan_id[0])
+                            print(f"Scan: {scan_type}, ID: {scan_id}")
                 data.append(scan_info)
 
     print(f"Sort {len(data)}")
@@ -95,12 +75,10 @@ def write_to_csv(data, filename='MRIScanLog.csv'):
 
     print(f"\nSaved: {abs_path}")
 
-def main():
-    xnat_username = sys.argv[1]
-    xnat_password = sys.argv[2]
+def main(xnat_username,xnat_password):
     scan_data = fetch_xnat_data(xnat_username, xnat_password)
     print(f"found {len(scan_data)} entries.")
     write_to_csv(scan_data)
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1],sys.argv[2])

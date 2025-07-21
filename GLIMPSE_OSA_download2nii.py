@@ -8,6 +8,7 @@ inputfilename, outputfilename
 
 BPM, 11/14/24: first version
 2/25/25: BIDs update, parrec
+7/21/25: Cleaned up by BPM
 
 """
 import csv
@@ -20,16 +21,14 @@ import nibabel as nib
 from pathlib import Path
 import xnat
 import argparse
-import shutil
 import certifi
 import requests
 import getpass
 import json
 import sys
 from zipfile import ZipFile
-sys.path.append('/mnt/cina/GLIMPSE_OSA/repo')
-print(os.listdir('/mnt/cina/GLIMPSE_OSA/repo'))
-import get_glimpse_xnat_data as generate_csv
+sys.path.append('/mnt/cina/GLIMPSE_OSA/repo') 
+import get_glimpse_xnat_data
 
 # some defaults for this project
 xnathost = 'https://xnatpro.ibic.washington.edu'
@@ -44,7 +43,6 @@ dcm2niixPath = '/usr/bin'
 # will prompt for password
 xnatusername = input("Enter your xnat username: ")
 xnatpassword = getpass.getpass("Enter your xnat password: ")
-print('first pass')
 
 def get_suffix(filename):
     match = re.search(r"\.nii(\.gz)?$", filename)
@@ -52,7 +50,7 @@ def get_suffix(filename):
 
 def niftiRename2Standard(scanlist,niftipath, outpath):
 
-    #these correspond to {generic output name,  acqual sequence name (dicom), column in renaming csv file}
+    #these correspond to {generic output name,  actual sequence name (dicom), column in renaming csv file, output dir}
     scans = {'t1w':['MPRAGE_0.8_CS_F',2,'anat'],
     't2w': ['3D_Brain_VIEW_T2_32chSHC_0.8_CS_F',3,'anat'],
     'csf_qf':['CSF_QF_retrospectivetrigger',4,'qf'],
@@ -94,7 +92,7 @@ def niftiRename2Standard(scanlist,niftipath, outpath):
                     os.mkdir(outdir)
                 #print('mv ' + orig_file + ' ' + newname)
                 shutil.copy(orig_file, newname)
-                shutil.copy(orig_file, newjson)
+                shutil.copy(json_name, newjson)
 
         # single one-to-one file mapping (not multi-echo)
         else:
@@ -228,15 +226,17 @@ def download_parrec(connection, project, session, parrec, outputdir):
     return True
 
 def main():
-    print('csv script running')
-    subprocess.run(['python', '/mnt/cina/GLIMPSE_OSA/repo/get_glimpse_xnat_data.py', xnatusername, xnatpassword])
-    print('done csv script')
     #get input arguments
     parser = argparse.ArgumentParser(description='Prints all files from a certain scan.')
     parser.add_argument('-f', type=str, required=False, help='scanlogcsv',default='MRIScanLog.csv')
     args = parser.parse_args()
     scanlogcsv = args.f
 
+    print("*****1.Writing MRI Scan Log")
+    get_glimpse_xnat_data.main(xnatusername, xnatpassword)
+    print('done csv script')
+
+    print("*****2.Download from CSV file")
     #open the csv file for each row is a dataset (session/experiment)
     with open(scanlogcsv, newline='') as csvfile:
         print('Reading csv file: ' + scanlogcsv)
@@ -253,7 +253,10 @@ def main():
                 session = row[1]
                 # Split by letters and underscores
                 parts = re.split(r"[A-Za-z_v]+", subject)
-                subject_id = f"sub-{parts[1].replace("00","0")}"
+                subject_num = parts[1].lstrip('0')
+                if len(subject_num) == 1:
+                    subject_num = '0' + subject_num
+                subject_id = f"sub-{subject_num}"
                 session_id = f"ses-{parts[2]}"
 
                 parrec= row[10] #.zip file with parrec and physio data
@@ -304,12 +307,11 @@ def main():
                 niipath = os.path.join(bidspath,'niftis')
                 outpath = bidspath
 
-                # is the dicom data is there, but nifti are not, convert with dcm2niix
+                # if the dicom data is there, but nifti are not, convert with dcm2niix
                 if (os.path.isdir(dcmpath) and not os.path.isdir(niipath)):
                     print('Converting ' + session + ' to nii')
                     os.mkdir(niipath)
                     dcmcmd = os.path.join(dcm2niixPath,'dcm2niix') + ' -o '+ niipath + ' -f %f_%p_%s_%e '+ dcmpath
-                    print(dcmcmd)
                     process = subprocess.run(dcmcmd, stdout=subprocess.PIPE,shell=True)
 
                 #delete dicom files once converted
@@ -328,7 +330,6 @@ def main():
                 #delete converted zip files once copied/renamed      
                 if os.path.isdir(zipfile_dir):
                     shutil.rmtree(zipfile_dir)
-                    
                     
 
 if __name__ == '__main__':
