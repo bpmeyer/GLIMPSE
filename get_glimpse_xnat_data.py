@@ -1,4 +1,4 @@
-# Psuedo:
+# DONT USE
 # 1. Connect to the XNAT server (get from download script)
 # 2. Loop through all subjects and their sessions
 # 3. For each session: go through all scasn and assign them to specific types
@@ -19,7 +19,7 @@ XNAT_HOST = 'https://xnatpro.ibic.washington.edu'
 PROJECT = 'GLIMPSE-OSA'
 
 
-SCAN_TYPES = ['MPRAGE', 'T2', 'CSF_QF', 'IVIM_APA', 'IVIM_APP', 'MEASL_650', 'MEASL_950', 'MEASL_M0', 'parrec']
+SCAN_TYPES = ['MPRAGE', 'T2', 'CSF_QF', 'IVIM_14b0_APA', 'IVIM_b0_APP', 'MEASL_650', 'MEASL_950', 'MEASL_M0', 'parrec']
 
 def extract_parrec_subject(session_label):
     print(f"Get parrec: {session_label}")
@@ -43,7 +43,6 @@ def fetch_xnat_data(xnat_username, xnat_password):
         project = connection.projects[PROJECT]
        
         for subject in project.subjects.values():
-            print(f"Processing subject: {subject.label}")
             for session in subject.experiments.values():
                 print(f"Processing session: {session.label}")
                 scan_info = {scan_type: 'NA' for scan_type in SCAN_TYPES}
@@ -64,7 +63,7 @@ def fetch_xnat_data(xnat_username, xnat_password):
     data.sort(key=lambda x: (x['subject'], x['session']))
     return data
 
-def write_to_csv(data, filename='MRIScanLog.csv'):
+def write_to_csv(data, filename='MRIScanLog_AUTODONTUSE.csv'):
     headers = ['subject', 'session'] + SCAN_TYPES
     abs_path = os.path.abspath(filename)
    

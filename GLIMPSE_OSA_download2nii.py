@@ -27,7 +27,6 @@ import getpass
 import json
 import sys
 from zipfile import ZipFile
-sys.path.append('/mnt/cina/GLIMPSE_OSA/repo') 
 import get_glimpse_xnat_data
 
 # some defaults for this project
@@ -133,7 +132,7 @@ def niftiRename2Standard(scanlist,niftipath, outpath):
 
 def parrecRename2Standard(scanlist,zipfile_dir, outpath):
 
-    #these correspond to {generic output name,  acqual sequence name (dicom), column in renaming csv file}
+    #these correspond to {generic output name,  actual sequence name (dicom), column in renaming csv file}
     scans = {'measl_650':['MEASL_650',7,'asl'],
     'measl_950':['MEASL_950',8,'asl'],
     'measl_m0':['MEASL_M0_NEW',9,'asl'],
@@ -232,11 +231,7 @@ def main():
     args = parser.parse_args()
     scanlogcsv = args.f
 
-    print("*****1.Writing MRI Scan Log")
-    get_glimpse_xnat_data.main(xnatusername, xnatpassword)
-    print('done csv script')
-
-    print("*****2.Download from CSV file")
+    print("*****Download from CSV file")
     #open the csv file for each row is a dataset (session/experiment)
     with open(scanlogcsv, newline='') as csvfile:
         print('Reading csv file: ' + scanlogcsv)
