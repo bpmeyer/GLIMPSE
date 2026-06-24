@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 
 
-SIF_CONTAINER = Path("/mnt/cina/lib/heudiconv_lastest.sif")
+SIF_CONTAINER = Path("/mnt/cina/lib/heudiconv_latest.sif")
 
 
 def find_sif_container(sif_container: str | Path | None = None) -> Path:
@@ -24,7 +24,7 @@ def find_sif_container(sif_container: str | Path | None = None) -> Path:
 def run_heudiconv_create_skeleton(
     subject: str,
     sif_container: str | Path | None = None,
-    dicom_glob: str | None = None,
+    dicom_dir: str | None = None,
     output_dir: str | Path = "nifti",
     heuristic: str = "convertall",
     converter: str = "none",
@@ -41,11 +41,7 @@ def run_heudiconv_create_skeleton(
     workdir = Path(workdir).resolve()
     sif_container = find_sif_container(sif_container)
     output_dir = Path(output_dir)
-    dicom_glob = dicom_glob or f"dicoms/{subject}/*/scans/**/*.dcm"
-    dicom_files = sorted(path.relative_to(workdir) for path in workdir.glob(dicom_glob))
-
-    if not dicom_files:
-        raise FileNotFoundError(f"No DICOM files matched: {workdir / dicom_glob}")
+    dicom_dir = f"dicoms/{subject}/"
 
     (workdir / output_dir).mkdir(parents=True, exist_ok=True)
 
@@ -59,12 +55,10 @@ def run_heudiconv_create_skeleton(
         "--cleanenv",
         "--bind",
         f"{workdir}:/work",
-        "--pwd",
-        "/work",
         str(sif_container),
         "heudiconv",
         "--files",
-        *[str(path) for path in dicom_files],
+        f"/work/dicom_dir",
         "-o",
         str(output_dir),
         "-f",
@@ -90,10 +84,8 @@ def parse_args() -> argparse.Namespace:
         help="Optional path to a .sif container. Defaults to /mnt/cina/lib/heudiconv_lastest.sif.",
     )
     parser.add_argument(
-        "--dicom-glob",
-        default=None,
-        help="DICOM glob relative to the working directory.",
-    )
+        "--dicom-dir",
+        default="dicoms", help="DICOM dir relative to the working directory.")
     parser.add_argument("-o", "--output-dir", default="nifti", help="Output directory.")
     parser.add_argument("-f", "--heuristic", default="convertall", help="Heuristic.")
     parser.add_argument("-c", "--converter", default="none", help="Converter.")
@@ -116,7 +108,7 @@ if __name__ == "__main__":
     run_heudiconv_create_skeleton(
         subject=args.subject,
         sif_container=args.sif_container,
-        dicom_glob=args.dicom_glob,
+        dicom_dir=args.dicom_dir,
         output_dir=args.output_dir,
         heuristic=args.heuristic,
         converter=args.converter,
