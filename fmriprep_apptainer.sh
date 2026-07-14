@@ -76,5 +76,4 @@ apptainer run --cleanenv \
   --omp-nthreads "$OMP_NTHREADS" \
   --mem-mb "$MEM_MB" \
   --skip-bids-validation \
-  --fallback-total-readout-time estimated \
-  --stop-on-first-crash
+  --fallback-total-readout-time estimated 
