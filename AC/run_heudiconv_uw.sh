@@ -4,9 +4,11 @@ set -euo pipefail
 # ---- Edit these paths ----
 SIF="/mnt/cina/lib/heudiconv_latest.sif"
 PROJECT="/mnt/cina/AC"
+# Resolve the repo directory relative to this script's own location 
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DICOM_ROOT="${PROJECT}/sourcedata/dicoms_uw"
 OUT_ROOT="${PROJECT}/sourcedata/nifti_uw"
-HEURISTIC="${PROJECT}/AC_heuristic.py"
+HEURISTIC="${REPO_DIR}/AC_heuristic.py"
 
 # Use apptainer by default.
 RUNTIME="apptainer"
@@ -70,6 +72,7 @@ for subj_dir in "${DICOM_ROOT}"/*; do
         "${RUNTIME}" exec \
             --cleanenv \
             --bind "${PROJECT}:${PROJECT}" \
+            --bind "${REPO_DIR}:${REPO_DIR}" \
             "${SIF}" \
             heudiconv \
                 --files "${subj_dir}" \
