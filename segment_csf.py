@@ -28,22 +28,26 @@ def estimate_t1_times(subject: str, session: str, project: str):
 
     '''
 
+    ### Directories
     mixed_dir = op.join(project, 'sourcedata', 'nifti', f'sub-{subject}', f'ses-{session}', 'mixed')
     out_dir = op.join(project, 'derivatives', 'csf_seg', f'sub-{subject}', f'ses-{session}')
     os.makedirs(out_dir, exist_ok=True)
 
+    ### Gathering Filenames
     se_fname = op.join(mixed_dir, f'sub-{subject}_ses-{session}_acq-mixed_SE-modulus.nii.gz')
     ir_fname = op.join(mixed_dir, f'sub-{subject}_ses-{session}_acq-mixed_IR-corrected-real.nii.gz')
     meta_fname = op.join(mixed_dir, f'sub-{subject}_ses-{session}_acq-mixed_meta.json')
     out_fname = op.join(out_dir, f'sub-{subject}_ses-{session}_acq-mixed_T1map_raw.nii.gz')
     post_fname = op.join(out_dir, f'sub-{subject}_ses-{session}_acq-mixed_T1map_postproc.nii.gz')
 
+    ### Setup Args for `mixed-t1map`
     shell_cmd = [f'--SE', f'{se_fname}', 
                  f'--IR', f'{ir_fname}', 
                  f'--meta', f'{meta_fname}', 
                  f'--output', f'{out_fname}', 
                  f'--postprocessed', f'{post_fname}'] 
 
+    ### If the metadata file is not present, make it 
     if not op.isfile(meta_fname): 
         make_mixed_meta(subject, session, meta_fname, project)
 
@@ -65,10 +69,13 @@ def make_mixed_meta(subject:str, session: str, meta_fname:str, project:str):
         meta_fname (json): File that contains required metadata for gmri2fem mri mixed-T1map.
 
     '''
-
+    ### Directories
     dcm_path = op.join(project, 'sourcedata', 'dicom', )
     mixed_dir = op.join(project, 'sourcedata', 'nifti', f'sub-{subject}', f'ses-{session}', 'mixed')
 
+    ### Create Dict to store the metadata files from the niftis
+    ## This is based on the documentation here: 
+    ## https://github.com/jorgenriseth/gMRI2FEM/blob/f11a9961b3689250d7fd6cf41357dd7d99a53f68/src/gmri2fem/mixed_dicom.py#L71
     meta = {}
     subvolumes = ['SE-modulus', 'IR-corrected-real']
     for subvol in subvolumes: 
@@ -95,13 +102,24 @@ def make_mixed_meta(subject:str, session: str, meta_fname:str, project:str):
 
 def allsubs_t1_times(project):
 
+
+    '''Wrapper function to loop over subjects and sessions in the project.
+    
+    Parameters:
+    ----------- 
+        project (str): The path to the project's root directory.
+    '''
+
+    ### Gathering list of subjects 
     nifti_dir = op.join(project, 'sourcedata', 'nifti')
     subs = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, 'sub-*'))])
 
+    ### Creating dict of subject:[session labels]  
     scans = {}
     for sub in subs: 
         scans[sub] = [op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, f'sub-{sub}', 'ses-*'))]
     
+    ### Looping over the sessions to estimate T1 times
     for sub, sessions in scans.items(): 
         print(f'Processing Subject {sub}')
         for ses in sessions: 
@@ -110,9 +128,18 @@ def allsubs_t1_times(project):
 
 def allsubs_reg_SE(project, greedy_fn): 
 
+    '''Wrapper function to loop over subjects and sessions in the project.
+    
+    Parameters:
+    ----------- 
+        project (str): The path to the project's root directory.
+    '''
+
+    ### Gathering List of Subjects
     nifti_dir = op.join(project, 'sourcedata', 'nifti')
     subs = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, 'sub-*'))])
 
+    ### Looping over subjects
     for sub in subs: 
         register_SE_T1_greedy(sub, project, greedy_fn)
 
@@ -138,23 +165,29 @@ def register_SE_T1_greedy(subject: str, project: str, greedy_fn:str, reference_s
 
     Returns: 
     --------
+        sereg_basename (nifti) : Registered reference SE image.
+
     '''
 
+    ### Directories 
     mixed_dir = op.join(project, 'sourcedata', 'nifti', f'sub-{subject}', f'ses-{reference_ses}', 'mixed')
     anat_dir = op.join(project, 'sourcedata', 'nifti', f'sub-{subject}', f'ses-{reference_ses}', 'anat')
     out_dir = op.join(project, 'derivatives', 'csf_seg', f'sub-{subject}', f'ses-{reference_ses}')
 
+    ### Filenames 
     se0_basename = f'sub-{subject}_ses-{reference_ses}_acq-mixed_SE-modulus.nii.gz'
     sereg_basename = f'sub-{subject}_ses-{reference_ses}_acq-mixed_SE-modulus_registered.nii.gz' 
     xfm_basename = f'sub-{subject}_ses-{reference_ses}_acq-mixed.mat'
     t1_basename = f'sub-{subject}_ses-{reference_ses}_T1w.nii.gz'
 
+    ### Setting up the greedy container 
     app_cmd = ['apptainer', 'exec', 
                 '--bind', f'{mixed_dir}:{mixed_dir}', 
                 '--bind', f'{anat_dir}:{anat_dir}', 
                 '--bind', f'{out_dir}:{out_dir}', 
                 greedy_fn]
 
+    ### Greedy Affine Registration
     affine_cmd = ['greedy', '-d', '3', '-a', 
                 '-i', f'{anat_dir}/{t1_basename}', f'{mixed_dir}/{se0_basename}', 
                 '-o', f'{out_dir}/{xfm_basename}',
@@ -164,6 +197,7 @@ def register_SE_T1_greedy(subject: str, project: str, greedy_fn:str, reference_s
 
     subprocess.run(app_cmd + affine_cmd) 
 
+    ### Applying the Registration 
     register_cmd = ['greedy', '-d', '3', 
                 '-rf', f'{anat_dir}/{t1_basename}', 
                 '-ri', 'NN', 
@@ -189,32 +223,38 @@ def register_T1maps_greedy(subject: str, project: str, greedy_fn:str, reference_
     Returns: 
     --------
     '''
-    nifti_dir = op.join(project, 'sourcedata', 'nifti')
 
-    ref_mixed_dir = op.join(project, 'sourcedata', 'nifti', f'sub-{subject}', f'ses-{reference_ses}', 'mixed')
-    ref_anat_dir = op.join(project, 'sourcedata', 'nifti', f'sub-{subject}', f'ses-{reference_ses}', 'anat')
+    ### Directories 
+    nifti_dir = op.join(project, 'sourcedata', 'nifti', f'sub-{subject}', f'ses-{reference_ses}')
+    ref_mixed_dir = op.join(nifti_dir, 'mixed')
+    ref_anat_dir = op.join(nifti_dir, 'anat')
     ref_out_dir = op.join(project, 'derivatives', 'csf_seg', f'sub-{subject}', f'ses-{reference_ses}')
 
+    ### Filenames
     ref_sereg_basename = f'sub-{subject}_ses-{reference_ses}_acq-mixed_SE-modulus_registered.nii.gz' 
     ref_t1_basename = f'sub-{subject}_ses-{reference_ses}_T1w.nii.gz'
     
+    ### Gathering the list of Sessions for Subject
     sessions = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, f'sub-{subject}', 'ses-*'))])
 
-
+    ### Looping over Sessions
     for ses in sessions: 
 
         print(f'Registering Sub-{subject} SE Session {ses} to SE Reference')
 
+        ### Session-Specific Directories 
         mixed_dir = op.join(project, 'sourcedata', 'nifti', f'sub-{subject}', f'ses-{ses}', 'mixed')
         anat_dir = op.join(project, 'sourcedata', 'nifti', f'sub-{subject}', f'ses-{ses}', 'anat')
         out_dir = op.join(project, 'derivatives', 'csf_seg', f'sub-{subject}', f'ses-{ses}')
 
+        ### Session Specific Filenames
         ses_se0_basename = f'sub-{subject}_ses-{ses}_acq-mixed_SE-modulus.nii.gz' 
         ses_xfm_basename = f'sub-{subject}_ses-{ses}_acq-mixed.mat'
         ses_t1_basename = f'sub-{subject}_ses-{ses}_T1w.nii.gz'
         ses_t1map_basename = f'sub-{subject}_ses-{ses}_acq-mixed_T1map_postproc.nii.gz'
         ses_t1map_reg_basename = f'sub-{subject}_ses-{ses}_acq-mixed_T1map_postproc_registered.nii.gz'
 
+        ### For the nonreference sessions, calculate the registration
         if ses != reference_ses: 
 
             app_cmd = ['apptainer', 'exec', 
@@ -233,6 +273,7 @@ def register_T1maps_greedy(subject: str, project: str, greedy_fn:str, reference_
             
             subprocess.run(app_cmd + affine_cmd)
         
+        ### For the reference Session, just setup the container 
         else: 
 
             app_cmd = ['apptainer', 'exec', 
@@ -243,6 +284,7 @@ def register_T1maps_greedy(subject: str, project: str, greedy_fn:str, reference_
 
         print(f'Aligning Sub-{subject} T1Map Session {ses} to T1 Reference')
 
+        ### Apply the registration to the session to get it into the SE registered space for reference scan
         register_cmd = ['greedy', '-d', '3', 
             '-rf', f'{ref_anat_dir}/{ref_t1_basename}', 
             '-ri', 'NN', 
