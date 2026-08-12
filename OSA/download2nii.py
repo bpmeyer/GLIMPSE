@@ -1,9 +1,7 @@
 #!/usr/local/anaconda3/bin/python3
 
-
 import csv
 import os
-import re
 import shutil
 import tempfile
 import xnat
@@ -14,17 +12,11 @@ from zipfile import ZipFile
 # some defaults for this project
 xnathost = 'https://xnatpro.ibic.washington.edu'
 project = 'GLIMPSE-OSA'
-dcm2niixPath = '/usr/bin'
-PROJECT_PATH = "/mnt/cina/GLIMPSE_OSA/tmp"
+PROJECT_PATH = "/mnt/cina/GLIMPSE_OSA"
 
 # will prompt for password
 xnatusername = input("Enter your xnat username: ")
 xnatpassword = getpass.getpass("Enter your xnat password: ")
-
-def get_suffix(filename):
-    match = re.search(r"\.nii(\.gz)?$", filename)
-    return match.group(0) if match else None
-
 
 #extract a zip into target_dir, dropping a single top-level wrapper directory if present
 def extract_zip_flattened(zipfile_path, target_dir):

@@ -20,3 +20,6 @@ venv.bak/
 .vscode/
 .claude/
 
+# pixi environments
+.pixi/*
+!.pixi/config.toml
