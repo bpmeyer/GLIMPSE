@@ -6,10 +6,11 @@ os.environ["ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"] = "16"
 import os.path as op
 import json 
 from glob import glob 
-import ants
+# import ants
 from pathlib import Path
 import nibabel as nib
 import subprocess
+import numpy as np
 
 def estimate_t1_times(subject: str, session: str, project: str):
 
@@ -86,13 +87,13 @@ def make_mixed_meta(subject:str, session: str, meta_fname:str, project:str):
             sidecar_data = json.load(f)
         
         if 'SE' in subvol:
-            meta["TR_SE"] = sidecar_data['RepetitionTime']
-            meta["TE"] = sidecar_data['EchoTime']
-            meta["ETL"] = sidecar_data['EchoTrainLength']
+            meta["TR_SE"] = sidecar_data['RepetitionTime'] * 1000
+            meta["TE"] = sidecar_data['EchoTime'] * 1000 
+            meta["ETL"] = sidecar_data['EchoTrainLength'] * 1000
 
         elif 'IR' in subvol: 
-            meta["TR_IR"] = sidecar_data['RepetitionTime']
-            meta["TI"] = sidecar_data['InversionTime']
+            meta["TR_IR"] = sidecar_data['RepetitionTime'] * 1000
+            meta["TI"] = sidecar_data['InversionTime'] * 1000
 
     print(f'Saving Metadata to {meta_fname}')
     with open(meta_fname, "w") as f:
@@ -117,7 +118,7 @@ def allsubs_t1_times(project):
     ### Creating dict of subject:[session labels]  
     scans = {}
     for sub in subs: 
-        scans[sub] = [op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, f'sub-{sub}', 'ses-*'))]
+        scans[sub] = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, f'sub-{sub}', 'ses-*'))])
     
     ### Looping over the sessions to estimate T1 times
     for sub, sessions in scans.items(): 
@@ -149,6 +150,7 @@ def allsubs_reg_T1maps(project, greedy_fn):
     subs = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, 'sub-*'))])
 
     for sub in subs: 
+        print(f'Registering T1 maps for {sub}')
         register_T1maps_greedy(sub, project, greedy_fn)
 
 def register_SE_T1_greedy(subject: str, project: str, greedy_fn:str, reference_ses: str ='01'):
@@ -225,9 +227,9 @@ def register_T1maps_greedy(subject: str, project: str, greedy_fn:str, reference_
     '''
 
     ### Directories 
-    nifti_dir = op.join(project, 'sourcedata', 'nifti', f'sub-{subject}', f'ses-{reference_ses}')
-    ref_mixed_dir = op.join(nifti_dir, 'mixed')
-    ref_anat_dir = op.join(nifti_dir, 'anat')
+    nifti_dir = op.join(project, 'sourcedata', 'nifti')
+    ref_mixed_dir = op.join(nifti_dir, f'sub-{subject}', f'ses-{reference_ses}', 'mixed')
+    ref_anat_dir = op.join(nifti_dir, f'sub-{subject}', f'ses-{reference_ses}', 'anat')
     ref_out_dir = op.join(project, 'derivatives', 'csf_seg', f'sub-{subject}', f'ses-{reference_ses}')
 
     ### Filenames
@@ -294,3 +296,41 @@ def register_T1maps_greedy(subject: str, project: str, greedy_fn:str, reference_
         subprocess.run(app_cmd + register_cmd)
 
     return
+
+def create_R1_map(subject:str, session:str, project: str):
+
+    out_dir = op.join(project, 'derivatives', 'csf_seg', f'sub-{subject}', f'ses-{session}')
+    t1map_basename = f'sub-{subject}_ses-{session}_acq-mixed_T1map_postproc_registered.nii.gz'
+    r1map_basename = f'sub-{subject}_ses-{session}_acq-mixed_R1map_postproc.nii.gz'
+    
+    t1map_im = nib.load(op.join(out_dir, t1map_basename))
+    t1map_data = t1map_im.get_fdata()
+    r1map_data = np.divide(1000, t1map_data, where = (t1map_data != 0), out= np.zeros_like(t1map_data))
+
+    nib.save(nib.Nifti1Image(r1map_data, t1map_im.affine), op.join(out_dir, r1map_basename))
+
+def allsubs_R1maps(project): 
+
+
+    '''Wrapper function to loop over subjects and sessions in the project.
+    
+    Parameters:
+    ----------- 
+        project (str): The path to the project's root directory.
+    '''
+
+    ### Gathering list of subjects 
+    nifti_dir = op.join(project, 'sourcedata', 'nifti')
+    subs = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, 'sub-*'))])
+
+    ### Creating dict of subject:[session labels]  
+    scans = {}
+    for sub in subs: 
+        scans[sub] = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, f'sub-{sub}', 'ses-*'))])
+    
+    ### Looping over the sessions to estimate T1 times
+    for sub, sessions in scans.items(): 
+        print(f'Processing Subject {sub}')
+        for ses in sessions: 
+            print(f'\tProcessing Session {ses}')
+            create_R1_map(sub, ses, project)
