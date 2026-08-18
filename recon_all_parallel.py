@@ -1,4 +1,4 @@
-#!/usr/local/anaconda3/bin/python3
+#!/usr/bin/env python3
 
 import argparse
 import csv
@@ -68,13 +68,13 @@ def run_recon_all(t1w_file, fs_deriv_dir, use_t2):
     }
 
 
-def recon_all_parallel(project_dir, n_cpus=4, use_t2=False):
+def recon_all_parallel(project_dir, n_cpus=20, use_t2=False):
     project_dir = Path(project_dir)
     base_dir = project_dir / "sourcedata" / "nifti"
     fs_deriv_dir = project_dir / "derivatives" / "freesurfer"
     status_csv = fs_deriv_dir / "recon_all_status.csv"
 
-    t1w_files = sorted(base_dir.glob("sub-*/ses-*/anat/*_T1w.nii.gz"))
+    t1w_files = sorted(base_dir.glob("sub-*/ses-*/anat/*run-01_T1w.nii.gz"))
     print(f"Found {len(t1w_files)} T1w files")
 
     pending = []
