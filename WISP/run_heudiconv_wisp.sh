@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export PATH="/usr/bin/dcm2niix:$PATH"
 
 # ---- Edit these paths ----
 SIF="/mnt/cina/lib/heudiconv_latest.sif"
@@ -55,6 +56,7 @@ for subj_dir in "${DICOM_ROOT}"/*; do
         echo "BIDS session: ses-${bids_session}"
         echo "DICOM path:   ${ses_dir}"
         echo "Output path:  ${OUT_ROOT}"
+        echo "dcm2niix version: $(dcm2niix -v)"
         echo "============================================================"
 
         "${RUNTIME}" exec \
