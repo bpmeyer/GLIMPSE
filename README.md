@@ -1,5 +1,55 @@
 # GLIMPSE
-Processing Pipeline for GLIMPSE projects. Steps are:
+Processing Pipeline for GLIMPSE projects.
+
+## Getting started
+
+Clone the repo:
+
+```
+git clone git@github.com:bpmeyer/GLIMPSE.git
+cd GLIMPSE
+```
+
+Dependencies are managed with [pixi](https://pixi.sh). Install pixi (see
+their [install docs](https://pixi.sh/latest/installation/)), then from the
+repo root:
+
+```
+pixi install
+```
+
+This creates a `.pixi` environment with the Python dependencies each
+project's scripts need (pydicom, nibabel, xnat, etc.), pinned in
+`pixi.toml`/`pixi.lock`.
+
+Run any command inside that environment with `pixi run <command>`, or drop
+into a shell with `pixi shell`. A few common tasks are predefined in
+`pixi.toml`:
+
+**OSA pipeline**
+
+| Task | What it does |
+| --- | --- |
+| `pixi run download-xnat-osa` | Download GLIMPSE-OSA session data from XNAT (`--dicom`/`--physio` to limit to one; see `OSA/downloadxnat.py`) |
+| `pixi run heudiconv-osa` | Convert GLIMPSE-OSA DICOMs to BIDS niftis (`OSA/run_heudiconv_osa.sh`) |
+
+**WISP pipeline**
+
+| Task | What it does |
+| --- | --- |
+| `pixi run download-xnat-wisp` | Download GLIMPSE-WISP session data from XNAT (`--dicom`/`--physio` to limit to one; see `WISP/downloadxnat.py`) |
+
+**Shared**
+
+| Task | What it does |
+| --- | --- |
+| `pixi run recon-all-parallel` | Run Freesurfer recon-all in parallel across subjects for any BIDS project directory (takes `project_dir` as an argument, e.g. `pixi run recon-all-parallel -- /mnt/cina/GLIMPSE_OSA/data`) |
+
+Run `pixi task list` to see the full, current list.
+
+## Pipeline
+
+Steps are:
 
 1. download dicoms from xnat
 

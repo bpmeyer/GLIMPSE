@@ -7,6 +7,13 @@ version = "0.1.0"
 
 [tasks]
 recon-all-parallel = "python recon_all_parallel.py"
+heudiconv-osa = "bash OSA/run_heudiconv_osa.sh"
+download-xnat-osa = "python OSA/downloadxnat.py"
+download-xnat-wisp = "python WISP/downloadxnat.py"
 
 [dependencies]
 python = ">=3.10"
+pydicom = ">=2.3"
+numpy = "*"
+nibabel = "*"
+xnat = "*"

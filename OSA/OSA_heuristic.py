@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any, Optional
 lgr = logging.getLogger("heudiconv")
 import collections
@@ -22,15 +23,38 @@ def create_key(
 
 # Edit this list when multiple image types are reconstructed.
 SPLIT_BY_IMAGE_TYPE = {
-    "CSF_QF_retrospectivetrigger",
-    "hT2W_IRSE",
+    "CSF_QF_retrospectivetrigger"
     }
+
+def get_series_image_type(ds):
+    """Type label for a file within a SPLIT_BY_IMAGE_TYPE series.
+
+    Classic (single-frame) Philips exports carry the magnitude/phase
+    distinction in the top-level Complex Image Component (0008,9208) tag,
+    while top-level ImageType stays a generic ('ORIGINAL', 'PRIMARY',
+    'FLOW_ENCODED', 'MIXED') for every file. Enhanced multi-frame files
+    that have been pre-split by split_enhanced_dicom.py instead carry the
+    distinction directly in top-level ImageType (e.g. M_FFE, M_PCA,
+    PHASE CONTRAST M), with no Complex Image Component tag at top level.
+    Combining both covers either export style.
+    """
+    parts = []
+    complex_component = ds.get(0x00089208)
+    if complex_component is not None:
+        parts.append(str(complex_component.value))
+    parts.extend(str(x) for x in ds.get("ImageType", ()))
+    return tuple(parts)
 
 def grouping(files, dcmfilter, seqinfo):
     groups = collections.OrderedDict()
     wrappers = {}
 
     for f in files:
+        # Skip original enhanced DICOMs backed up by split_enhanced_dicom.py;
+        # only the per-type files it wrote alongside them should be used.
+        if "orig" in Path(f).parts:
+            continue
+
         mwinfo = validate_dicom(f, dcmfilter)
         if mwinfo is None:
             continue
@@ -41,7 +65,6 @@ def grouping(files, dcmfilter, seqinfo):
         series_number = ds.get("SeriesNumber", "")
         protocol_name = ds.get("ProtocolName", "")
         series_desc = ds.get("SeriesDescription", "")
-        cic = ds.get("ComplexImageComponent", "")
 
         key = (
             series_number,
@@ -49,7 +72,7 @@ def grouping(files, dcmfilter, seqinfo):
         )
 
         if series_desc in SPLIT_BY_IMAGE_TYPE:
-            key = key + (cic,)
+            key = key + (get_series_image_type(ds),)
 
         groups.setdefault(key, []).append(f)
         wrappers.setdefault(key, mw)
@@ -67,8 +90,8 @@ def grouping(files, dcmfilter, seqinfo):
         series_id = f"{series_number}-{protocol_name}"
 
         if series_desc in SPLIT_BY_IMAGE_TYPE:
-            cic = ds.get("ComplexImageComponent", "")
-            series_id = f"{series_id}-{cic}"
+            image_suffix = "_".join(get_series_image_type(ds))
+            series_id = f"{series_id}-{image_suffix}"
 
         si = create_seqinfo(mw, series_files, series_id)
         seqinfos[si] = series_files
@@ -82,50 +105,32 @@ def get_image_suffix(s):
     return parts[2]
 
 def infotodict(
-
     seqinfo: list[SeqInfo],
 ) -> dict[tuple[str, tuple[str, ...], None], list]:
-    
-    t1w = create_key('{bids_subject_session_dir}/anat/{bids_subject_session_prefix}_T1w')
-    t2w = create_key('{bids_subject_session_dir}/anat/{bids_subject_session_prefix}_T2w')
-    func_rest = create_key('{bids_subject_session_dir}/func/{bids_subject_session_prefix}_task-rest_bold')
-    fmap_ap = create_key('{bids_subject_session_dir}/fmap/{bids_subject_session_prefix}_acq-func_dir-AP_epi')
-    fmap_pa = create_key('{bids_subject_session_dir}/fmap/{bids_subject_session_prefix}_acq-func_dir-PA_epi')
-    dwi_ap = create_key('{bids_subject_session_dir}/dwi/{bids_subject_session_prefix}_dir-AP_dwi')
-    dwi_fmap_pa = create_key('{bids_subject_session_dir}/fmap/{bids_subject_session_prefix}_acq-dwi_dir-PA_epi')
 
-    csf_qf_ph = create_key('{bids_subject_session_dir}/flow/{bids_subject_session_prefix}_acq-CSF_part-phase_flow')
-    csf_qf_mag = create_key('{bids_subject_session_dir}/flow/{bids_subject_session_prefix}_acq-CSF_part-mag_flow')
+    t1w = create_key('{bids_subject_session_dir}/anat/{bids_subject_session_prefix}_run-{item:02d}_T1w')
+    t2w = create_key('{bids_subject_session_dir}/anat/{bids_subject_session_prefix}_run-{item:02d}_T2w')
+    dwi_ap = create_key('{bids_subject_session_dir}/dwi/{bids_subject_session_prefix}_dir-AP_run-{item:02d}_dwi')
+    dwi_fmap_pa = create_key('{bids_subject_session_dir}/fmap/{bids_subject_session_prefix}_acq-dwi_dir-PA_run-{item:02d}_epi')
 
-    ir_cr = create_key('sub-{subject}/{session}/mixed/{bids_subject_session_prefix}_acq-mixed_IR-corrected-real')
-    se_m = create_key('sub-{subject}/{session}/mixed/{bids_subject_session_prefix}_acq-mixed_SE-modulus')
-    
-    asl_650 = create_key('{bids_subject_session_dir}/perf/{bids_subject_session_prefix}_acq-650_asl')
-    asl_950 = create_key('{bids_subject_session_dir}/perf/{bids_subject_session_prefix}_acq-950_asl')
-    m0 = create_key('{bids_subject_session_dir}/perf/{bids_subject_session_prefix}_M0scan')
-    pcasl1 = create_key('{bids_subject_session_dir}/perf/{bids_subject_session_prefix}_acq-pcasl1_asl')
-    pcasl2 = create_key('{bids_subject_session_dir}/perf/{bids_subject_session_prefix}_acq-pcasl2_asl')
-    pcasl3 = create_key('{bids_subject_session_dir}/perf/{bids_subject_session_prefix}_acq-pcasl3_asl')
+    pcasl_650 = create_key('{bids_subject_session_dir}/perf/{bids_subject_session_prefix}_pld-650_run-{item:02d}_asl')
+    pcasl_950 = create_key('{bids_subject_session_dir}/perf/{bids_subject_session_prefix}_pld-950_run-{item:02d}_asl')
+    pcasl_m0 = create_key('{bids_subject_session_dir}/perf/{bids_subject_session_prefix}_run-{item:02d}_m0scan') 
+
+    csf_qf_ph = create_key('{bids_subject_session_dir}/flow/{bids_subject_session_prefix}_acq-CSF_part-phase_run-{item:02d}_flow')
+    csf_qf_mag = create_key('{bids_subject_session_dir}/flow/{bids_subject_session_prefix}_acq-CSF_part-mag_run-{item:02d}_flow')
+
     
     info: dict[tuple[str, tuple[str, ...], None], list] = {
         t1w: [],
         t2w: [],
-        func_rest: [],
-        fmap_ap: [],
-        fmap_pa: [],
         dwi_ap: [],
         dwi_fmap_pa: [],
+        pcasl_650: [],
+        pcasl_950: [],
+        pcasl_m0: [],
         csf_qf_ph: [],
         csf_qf_mag: [],
-        ir_cr: [],
-        se_m: [],
-
-        asl_650: [],
-        asl_950: [],
-        m0: [],
-        pcasl1: [],
-        pcasl2: [],
-        pcasl3: [],
     }
     
     for s in seqinfo:      
@@ -134,41 +139,28 @@ def infotodict(
             info[t1w] = [s.series_id]
         if '3D_Brain_VIEW_T2' in s.series_description:
             info[t2w] = [s.series_id]
-        if 'fFMRI_MB8_SENSE' in s.series_description:
-            info[func_rest] = [s.series_id]
-        if 'fMRI_SEAPA' in s.series_description:
-            info[fmap_ap] = [s.series_id]
-        if 'fMRI_SEAPP' in s.series_description:
-            info[fmap_pa] = [s.series_id]
         if 'DTI_IVIM_14b0_APA' in s.series_description:
             info[dwi_ap] = [s.series_id]
         if 'DTI_IVIM_b0_APP' in s.series_description:
             info[dwi_fmap_pa] = [s.series_id]
+        if  s.series_description == 'MEASL_M0_NEW':
+            info[pcasl_m0].append(s.series_id)
+        if s.series_description == 'MEASL_950':
+            info[pcasl_950].append(s.series_id) 
+        if s.series_description == 'MEASL_650':
+            info[pcasl_650].append(s.series_id) 
+
 
         if 'CSF_QF' in s.series_description:
-            image_suffix = get_image_suffix(s).upper()
-            if image_suffix == 'PHASE':
+            image_suffix = get_image_suffix(s)
+            # Enhanced (pre-split) files: 'PHASE CONTRAST M' / 'M_FFE' in ImageType.
+            # Classic per-file exports: suffix starts with Complex Image
+            # Component 'PHASE' / 'MAGNITUDE' instead.
+            if 'PHASE CONTRAST M' in image_suffix or image_suffix.startswith('PHASE'):
                 info[csf_qf_ph].append(s.series_id)
-            elif image_suffix == 'MAGNITUDE':
+            elif 'M_FFE' in image_suffix or image_suffix.startswith('MAGNITUDE'):
                 info[csf_qf_mag].append(s.series_id)
             else:
                 continue
-        
-        if 'MEASL_650' in s.series_description:
-            info[asl_650] = [s.series_id]
-
-        if 'MEASL_950' in s.series_description:
-            info[asl_950] = [s.series_id]
-
-        if 'MEASL_M0' in s.series_description:
-            info[m0] = [s.series_id]
-
-        if '3D_pCASL_6mm_H4_900BS' in s.series_description:
-            if s.series_id.startswith('703-'):
-                info[pcasl1] = [s.series_id]
-            elif s.series_id.startswith('803-'):
-                info[pcasl2] = [s.series_id]
-            elif s.series_id.startswith('902-'):
-                info[pcasl3] = [s.series_id]
 
     return info
