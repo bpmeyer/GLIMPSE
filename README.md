@@ -32,6 +32,7 @@ into a shell with `pixi shell`. A few common tasks are predefined in
 | --- | --- |
 | `pixi run download-xnat-osa` | Download GLIMPSE-OSA session data from XNAT (`--dicom`/`--physio` to limit to one; see `OSA/downloadxnat.py`) |
 | `pixi run heudiconv-osa` | Convert GLIMPSE-OSA DICOMs to BIDS niftis (`OSA/run_heudiconv_osa.sh`) |
+| `pixi run recon-all-parallel --n-cpus N_CPU --use-t2 /mnt/cina/GLIMPSE_OSA/data/` | Run Freesurfer recon-all in parallel across subjects for any BIDS project directory (takes `project_dir` as an argument, e.g. `pixi run recon-all-parallel -- /mnt/cina/GLIMPSE_OSA/data`) | The default --n-cpus is 8. You can specify less, however, because FreeSurfer uses 24G of memory per 1 CPU job, you cannot use more than 8. |
 
 **WISP pipeline**
 
@@ -43,7 +44,7 @@ into a shell with `pixi shell`. A few common tasks are predefined in
 
 | Task | What it does |
 | --- | --- |
-| `pixi run recon-all-parallel` | Run Freesurfer recon-all in parallel across subjects for any BIDS project directory (takes `project_dir` as an argument, e.g. `pixi run recon-all-parallel -- /mnt/cina/GLIMPSE_OSA/data`) |
+| `pixi run recon-all-parallel` | Run Freesurfer recon-all in parallel across subjects for any BIDS project directory (takes `project_dir` as an argument, e.g. `pixi run recon-all-parallel /mnt/cina/GLIMPSE_OSA/data`) [-h] [--n-cpus N_CPUS] [--use-t2]|
 
 Run `pixi task list` to see the full, current list.
 

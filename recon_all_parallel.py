@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import argparse
 import csv
 import shlex
@@ -126,7 +124,12 @@ if __name__ == "__main__":
         description="Run recon-all in parallel over a BIDS project's sourcedata/nifti T1w images."
     )
     parser.add_argument("project_dir", help="Path to the BIDS project directory")
-    parser.add_argument("--n-cpus", type=int, default=4)
+    parser.add_argument(
+        "--n-cpus",
+        type=int,
+        default=8,
+        help="Number of parallel recon-all jobs (1-8; values above 8 are capped at 8, since each recon-all instance is itself multi-threaded and memory-heavy)",
+    )
     parser.add_argument(
         "--use-t2",
         action="store_true",
@@ -134,4 +137,8 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    recon_all_parallel(args.project_dir, n_cpus=args.n_cpus, use_t2=args.use_t2)
+    n_cpus = max(1, min(args.n_cpus, 8))
+    if n_cpus != args.n_cpus:
+        print(f"--n-cpus={args.n_cpus} out of range, using {n_cpus} instead")
+
+    recon_all_parallel(args.project_dir, n_cpus=n_cpus, use_t2=args.use_t2)
