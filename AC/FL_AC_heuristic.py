@@ -135,7 +135,7 @@ def infotodict(
     swi = create_key('{bids_subject_session_dir}/swi/{bids_subject_session_prefix}_run-{item:02d}_swi') 
     swi_mIP = create_key('{bids_subject_session_dir}/swi/{bids_subject_session_prefix}_run-{item:02d}_minIP') 
     flair = create_key('{bids_subject_session_dir}/anat/{bids_subject_session_prefix}_run-{item:02d}_FLAIR')
-    func_rest = create_key('{bids_subject_session_dir}/func/{bids_subject_session_prefix}_task-rest_dir_PA_run-{item:02d}_bold')
+    func_rest = create_key('{bids_subject_session_dir}/func/{bids_subject_session_prefix}_task-rest_dir-PA_run-{item:02d}_bold')
     fmap_ap = create_key('{bids_subject_session_dir}/fmap/{bids_subject_session_prefix}_acq-func_dir-AP_run-{item:02d}_epi')
     pcasl = create_key('{bids_subject_session_dir}/perf/{bids_subject_session_prefix}_task-pcasl_run-{item:02d}_asl')
     dwi = create_key('{bids_subject_session_dir}/dwi/{bids_subject_session_prefix}_dir_AP_run-{item:02d}_dwi')
