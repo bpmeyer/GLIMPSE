@@ -10,8 +10,7 @@ recon-all-parallel = "python recon_all_parallel.py"
 freesurfer-qa = "python freesurfer_qa.py"
 segment-pvs = "python segment_pvs.py"
 heudiconv-osa = "bash OSA/run_heudiconv_osa.sh"
-download-xnat-osa = "python OSA/downloadxnat.py"
-download-xnat-wisp = "python WISP/downloadxnat.py"
+download-xnat = "python downloadxnat.py"
 
 [dependencies]
 python = ">=3.10"

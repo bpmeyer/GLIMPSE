@@ -30,31 +30,18 @@ list. The common ones:
 
 | Task | What it does |
 | --- | --- |
-| `pixi run download-xnat-osa` | Download GLIMPSE-OSA session data from XNAT |
 | `pixi run heudiconv-osa` | Convert GLIMPSE-OSA DICOMs to BIDS niftis |
 
-**WISP pipeline**
+**Shared** (work on any registered/BIDS project directory under `/mnt/cina`)
 
 | Task | What it does |
 | --- | --- |
-| `pixi run download-xnat-wisp` | Download GLIMPSE-WISP session data from XNAT |
-
-**Shared** (work on any BIDS project directory under `/mnt/cina`)
-
-| Task | What it does |
-| --- | --- |
+| `pixi run download-xnat` | Download a project's session data from XNAT |
 | `pixi run recon-all-parallel` | Run FreeSurfer recon-all in parallel across subjects |
 | `pixi run freesurfer-qa` | Open a subject's FreeSurfer output in freeview for QA |
 | `pixi run segment-pvs` | Run segcsvd PVS segmentation over every session |
 
 Details and flags for each task:
-
-<details>
-<summary><code>pixi run download-xnat-osa</code></summary>
-
-Download GLIMPSE-OSA session data from XNAT. Use `--dicom` or `--physio` to
-limit to just one. See `OSA/downloadxnat.py`.
-</details>
 
 <details>
 <summary><code>pixi run heudiconv-osa</code></summary>
@@ -63,10 +50,21 @@ Convert GLIMPSE-OSA DICOMs to BIDS niftis. See `OSA/run_heudiconv_osa.sh`.
 </details>
 
 <details>
-<summary><code>pixi run download-xnat-wisp</code></summary>
+<summary><code>pixi run download-xnat</code></summary>
 
-Download GLIMPSE-WISP session data from XNAT. Use `--dicom` or `--physio` to
-limit to just one. See `WISP/downloadxnat.py`.
+Download a project's session data from XNAT, from the scan-log CSV listed
+for each session (`MRIScanLog.csv` in the project directory by default).
+
+```
+pixi run download-xnat PROJECT [-f SCANLOGCSV] [--dicom] [--physio]
+```
+
+- `PROJECT` — one of the registered projects: `GLIMPSE_OSA`, `GLIMPSE_WISP`.
+  New projects are added via `PROJECT_CONFIGS` in `downloadxnat.py`.
+- `--dicom` / `--physio` — limit to just one (default: both).
+- `-f` — path to the scan-log CSV, if not the project's default `MRIScanLog.csv`.
+
+Example: `pixi run download-xnat GLIMPSE_OSA --dicom`
 </details>
 
 <details>
@@ -81,7 +79,7 @@ pixi run recon-all-parallel PROJECT [--n-cpus N] [--use-t2] [--sessions SES [SES
 
 - `PROJECT` — project directory name under `/mnt/cina`, e.g. `GLIMPSE_OSA`.
 - `--n-cpus` — default 8, capped at 8. FreeSurfer uses ~24GB of memory per
-  job, so more than 8 parallel jobs isn't safe.
+  job.
 - `--use-t2` — use the matching T2w image to refine the pial surface, if available.
 - `--sessions` — only run for these sessions, e.g. `--sessions ses-01 ses-02`.
 
