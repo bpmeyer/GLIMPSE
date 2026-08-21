@@ -1,5 +1,3 @@
-#!/usr/local/anaconda3/bin/python3
-
 import sys
 from pathlib import Path
 

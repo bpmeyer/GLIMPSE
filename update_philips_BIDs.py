@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import argparse
 import json
 import subprocess
@@ -98,9 +96,9 @@ def update_func_fmap_files(fmap_files, phase_encoding_direction):
         print(f"Updated func {phase_encoding_direction} fmap JSON: {json_file}")
 
 
-def update_philips_bids(project_dir):
+def update_philips_bids(project_dir, nifti_subdir="nifti"):
     project_dir = Path(project_dir)
-    base_dir = project_dir / "sourcedata" / "nifti"
+    base_dir = project_dir / "sourcedata" / nifti_subdir
 
     bold_files = sorted(base_dir.glob("sub-*/ses-*/func/*bold.nii.gz"))
     fmap_func_ap_files = sorted(
@@ -121,6 +119,11 @@ if __name__ == "__main__":
         "B0 field metadata) for a BIDS project's sourcedata/nifti directory."
     )
     parser.add_argument("project_dir", help="Path to the BIDS project directory")
+    parser.add_argument(
+        "--nifti-subdir",
+        default="nifti",
+        help="Name of the sourcedata subdirectory holding the BIDS nifti tree (default: nifti)",
+    )
     args = parser.parse_args()
 
-    update_philips_bids(args.project_dir)
+    update_philips_bids(args.project_dir, nifti_subdir=args.nifti_subdir)
