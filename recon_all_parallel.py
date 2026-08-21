@@ -7,6 +7,7 @@ from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 FREESURFER_HOME = "/usr/local/freesurfer/stable8"
+PROJECTS_ROOT = "/mnt/cina"
 
 
 def run_with_freesurfer_env(cmd, **kwargs):
@@ -66,13 +67,20 @@ def run_recon_all(t1w_file, fs_deriv_dir, use_t2):
     }
 
 
-def recon_all_parallel(project_dir, n_cpus=20, use_t2=False):
-    project_dir = Path(project_dir)
+def recon_all_parallel(project, n_cpus=20, use_t2=False, sessions=None):
+    project_dir = Path(PROJECTS_ROOT) / project / "data"
     base_dir = project_dir / "sourcedata" / "nifti"
     fs_deriv_dir = project_dir / "derivatives" / "freesurfer"
     status_csv = fs_deriv_dir / "recon_all_status.csv"
 
-    t1w_files = sorted(base_dir.glob("sub-*/ses-*/anat/*run-01_T1w.nii.gz"))
+    if sessions:
+        t1w_files = sorted(
+            f
+            for ses in sessions
+            for f in base_dir.glob(f"sub-*/{ses}/anat/*run-01_T1w.nii.gz")
+        )
+    else:
+        t1w_files = sorted(base_dir.glob("sub-*/ses-*/anat/*run-01_T1w.nii.gz"))
     print(f"Found {len(t1w_files)} T1w files")
 
     pending = []
@@ -123,7 +131,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Run recon-all in parallel over a BIDS project's sourcedata/nifti T1w images."
     )
-    parser.add_argument("project_dir", help="Path to the BIDS project directory")
+    parser.add_argument(
+        "project", help=f"Project directory name under {PROJECTS_ROOT}, e.g. AC"
+    )
     parser.add_argument(
         "--n-cpus",
         type=int,
@@ -135,10 +145,18 @@ if __name__ == "__main__":
         action="store_true",
         help="Use the matching T2w image with the -T2pial flag, if available",
     )
+    parser.add_argument(
+        "--sessions",
+        nargs="+",
+        default=None,
+        help="Only run for these sessions, e.g. --sessions ses-01 ses-02 (default: all sessions)",
+    )
     args = parser.parse_args()
 
     n_cpus = max(1, min(args.n_cpus, 8))
     if n_cpus != args.n_cpus:
         print(f"--n-cpus={args.n_cpus} out of range, using {n_cpus} instead")
 
-    recon_all_parallel(args.project_dir, n_cpus=n_cpus, use_t2=args.use_t2)
+    recon_all_parallel(
+        args.project, n_cpus=n_cpus, use_t2=args.use_t2, sessions=args.sessions
+    )
