@@ -1,0 +1,48 @@
+#!/usr/local/anaconda3/bin/python3
+
+import sys
+from pathlib import Path
+
+PROJECT = Path("/mnt/cina/GLIMPSE_WISP/data")
+greedy_fn = '/mnt/home/jdromero/Packages/greedy.sif'
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from estimate_csf_r1maps import *
+
+if __name__ == "__main__":
+
+    ### Gathering list of subjects 
+    nifti_dir = op.join(PROJECT, 'sourcedata', 'nifti')
+    subs = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, 'sub-*'))])
+    
+    # Gather List of Subjects
+    for subject in subs:
+        
+        print(f'Processiong Subject {subject}')
+        
+        # Sorted list of Sessions for Subject
+        sessions = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, f'sub-{subject}', 'ses-*'))]) 
+
+        # # Get the T1 maps for Subject
+        # for session in sessions: 
+        #     print(f'Estimating T1 Times for sub-{subject}, ses-{session}')
+        #     estimate_t1_times(subject, session, PROJECT)
+        
+        # print(f'Registering SE Images to T1 for sub-{subject}')
+        # register_SE_T1_greedy(subject, PROJECT, greedy_fn = greedy_fn)
+
+        # print(f'Registering T1 Maps to Registered SE Image')
+        # register_T1maps_greedy(subject, PROJECT, greedy_fn = greedy_fn)
+
+        # for session in sessions: 
+        #     # print(f'Calculating R1 map for sub-{subject}, ses-{session}')
+        #     # create_R1_map(subject, session, PROJECT)
+
+        print(f'Registering ASeg from sub-{subject}')
+        # register_aseg(subject, PROJECT)
+
+        print(f'Creating CSF Segmentation for sub-{subject}')
+        seg_csf(subject, PROJECT)
+
+

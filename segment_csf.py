@@ -6,331 +6,211 @@ os.environ["ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"] = "16"
 import os.path as op
 import json 
 from glob import glob 
-# import ants
+import ants
 from pathlib import Path
 import nibabel as nib
 import subprocess
 import numpy as np
+import simple_mri as sm
+from pprint import pprint
 
-def estimate_t1_times(subject: str, session: str, project: str):
+from gmri2fem.csf_segmentation import create_csf_seg, create_precsf_seg, PRECSF_EXCLUDED_SEGMENTS
+from gmri2fem.masking import create_csf_mask
+from gmri2fem.segmentation_refinement import extrapolate_segmentation_to_mask
+from gmri2fem import segment_tools as segtools
+from gmri2fem.segment_tools import find_description_label, find_label_description
 
-    '''Function to estimate the T1 Times using gmri2fem
+
+def register_aseg(subject:str, project:str, reference_ses: str ='01'): 
+
+    fs_dir = op.join(project, 'derivatives', 'freesurfer', 
+                     f'sub-{subject}_ses-{reference_ses}', 'mri')
+    anat_dir = op.join(project, 'sourcedata', 'nifti', 
+                     f'sub-{subject}', f'ses-{reference_ses}', 'anat')
+
+    aseg_fn = op.join(fs_dir, 'aparc+aseg.mgz')
+    aseg_nat_fn = op.join(fs_dir, 'aparc+aseg_native.mgz') 
+    t1_fn = op.join(anat_dir, f'sub-{subject}_ses-{reference_ses}_T1w.nii.gz')
     
-    Parameters:
-    -----------
-        subject (str): Subject ID Number
-        session (str): Session Number 
-        project (str): The path to the project's root directory.
-    
-    Returns: 
-    --------
-        out_fname (nifti): The raw estimated mixed T1 Map. 
-        post_fname (nifti): The postprocessed mixed T1 Map.
+    aseg_im = ants.image_read(aseg_fn)
+    t1_im = ants.image_read(t1_fn)
 
-    '''
+    xfm = ants.registration(fixed = t1_im, moving = aseg_im, 
+                            type_of_transform='Rigid')
 
-    ### Directories
-    mixed_dir = op.join(project, 'sourcedata', 'nifti', f'sub-{subject}', f'ses-{session}', 'mixed')
-    out_dir = op.join(project, 'derivatives', 'csf_seg', f'sub-{subject}', f'ses-{session}')
+    aseg_reg_im = ants.apply_transforms(fixed = t1_im, moving=aseg_im, 
+                                       transformlist = xfm['fwdtransforms'], 
+                                       interpolator='nearestNeighbor')
+
+    ants.image_write(aseg_reg_im, aseg_nat_fn)
+
+def create_csf_segmentation(subject, project, reference_ses:str ='01'): 
+
+    os.environ['FREESURFER_HOME'] = '/usr/local/freesurfer/stable8'
+
+    fs_dir = op.join(project, 'derivatives', 'freesurfer', 
+                     f'sub-{subject}_ses-{reference_ses}', 'mri')
+    mixed_dir = op.join(project, 'derivatives', 'csf_seg', 
+                        f'sub-{subject}', f'ses-{reference_ses}')
+    out_dir = op.join(mixed_dir, 'segmentations')
     os.makedirs(out_dir, exist_ok=True)
 
-    ### Gathering Filenames
-    se_fname = op.join(mixed_dir, f'sub-{subject}_ses-{session}_acq-mixed_SE-modulus.nii.gz')
-    ir_fname = op.join(mixed_dir, f'sub-{subject}_ses-{session}_acq-mixed_IR-corrected-real.nii.gz')
-    meta_fname = op.join(mixed_dir, f'sub-{subject}_ses-{session}_acq-mixed_meta.json')
-    out_fname = op.join(out_dir, f'sub-{subject}_ses-{session}_acq-mixed_T1map_raw.nii.gz')
-    post_fname = op.join(out_dir, f'sub-{subject}_ses-{session}_acq-mixed_T1map_postproc.nii.gz')
+    aseg_fn = op.join(fs_dir, 'aparc+aseg.mgz') 
+    sereg_fn = op.join(mixed_dir, f'sub-{subject}_ses-{reference_ses}_acq-mixed_SE-modulus_registered.nii.gz') 
 
-    ### Setup Args for `mixed-t1map`
-    shell_cmd = [f'--SE', f'{se_fname}', 
-                 f'--IR', f'{ir_fname}', 
-                 f'--meta', f'{meta_fname}', 
-                 f'--output', f'{out_fname}', 
-                 f'--postprocessed', f'{post_fname}'] 
+    sereg_im = sm.load_mri(sereg_fn, dtype=np.float32)
+    aseg_im = sm.load_mri(aseg_fn, dtype=np.int16)
 
-    ### If the metadata file is not present, make it 
-    if not op.isfile(meta_fname): 
-        make_mixed_meta(subject, session, meta_fname, project)
+    # lut_table = segtools.read_lut(op.join(os.environ['FREESURFER_HOME'], "FreeSurferColorLUT.txt"))
 
-    return subprocess.run(['gmri2fem', 'mri', 'mixed-t1map'] + shell_cmd)
+    # labs = sorted([find_description_label(lab, lut_table) for lab in PRECSF_EXCLUDED_SEGMENTS])
+    # print(labs)
 
-def make_mixed_meta(subject:str, session: str, meta_fname:str, project:str): 
+    # csf_seg_im = create_csf_seg(aseg_im, sereg_im)
 
-    '''Function to extract meta data from the SE-modulus and IR-corrected-real nifti sidecar files.
+    ### Pre-CSF Segmentation - All Descs in PRECSF_EXCLUDED_LABELS set to 0
+    precsf_seg_dat = create_precsf_seg(aseg_im.data)
+    precsf_seg_im = sm.SimpleMRI(precsf_seg_dat, aseg_im.affine)
+    sm.save_mri(precsf_seg_im,
+                op.join(out_dir, f'sub-{subject}_seg-precsf_seg.nii.gz'),
+                dtype=aseg_im.data.dtype)
     
-    Parameters:
-    -----------
-        subject (str): Subject ID Number
-        session (str): Session Number 
-        meta_fname (Path | str): The path to the meta data file (should be json). 
-        project (str): The path to the project's root directory.
+    ### Create CSF Mask 
+    csf_mask_data = create_csf_mask(sereg_im.data)
+    csf_mask_im = sm.SimpleMRI(csf_mask_data, sereg_im.affine)
+    sm.save_mri(csf_mask_im, 
+                op.join(out_dir, f'sub-{subject}_seg-csf_mask.nii.gz'), 
+                dtype=np.int16)
+
+    ### Extrapolate 
+    csf_seg_im = extrapolate_segmentation_to_mask(precsf_seg_im, csf_mask_im)
+    sm.save_mri(csf_seg_im, 
+                op.join(out_dir, f'sub-{subject}_seg-csf_seg.nii.gz'), 
+                dtype=np.uint8)
+
+def gather_groups():
+
+    def _desc_to_cortex_labels(description_list):
+
+        """Map a cortical region-description to it's corresponding FreeSurfer name
+        for both left and right hemisphere."""
+
+        return (
+            [f'ctx-lh-{d.lower().replace(" ", "")}' for d in description_list]
+            + [f'ctx-rh-{d.lower().replace(" ", "")}' for d in description_list]
+        )
+
+    ventricles = ["3rd-Ventricle", "4th-Ventricle",
+                  "Left-Lateral-Ventricle", "Right-Lateral-Ventricle",
+                  "Left-Inf-Lat-Vent", "Right-Inf-Lat-Vent"]
+    infratentorial = ["Brain-Stem",
+                    "Left-Cerebellum-Cortex", "Right-Cerebellum-Cortex"]
+    basal = [*_desc_to_cortex_labels(["medial orbitofrontal", "fusiform", "frontal pole"]),
+            "Optic-Chiasm", 
+            "Left-VentralDC", "Right-VentralDC",
+            "Left-Hippocampus", "Right-Hippocampus"]
+    medial = _desc_to_cortex_labels(["Posterior cingulate", "Rostral anterior cingulate", "Caudal anterior cingulate",
+                               "Superiorfrontal", "Precuneus", "Isthmus cingulate",
+                               "Paracentral", "Cuneus", "Lingual", "Pericalcarine", 
+                               "Entorhinal", "Parahippocampal"])
+    insula = _desc_to_cortex_labels(["Insula"])
     
-    Returns: 
-    --------
-        meta_fname (json): File that contains required metadata for gmri2fem mri mixed-T1map.
+    return {"ventricles": ventricles,
+            "infratentorial": infratentorial,
+            "basal": basal,
+            "medial": medial,
+            "insula": insula
+            }
 
-    '''
-    ### Directories
-    dcm_path = op.join(project, 'sourcedata', 'dicom', )
-    mixed_dir = op.join(project, 'sourcedata', 'nifti', f'sub-{subject}', f'ses-{session}', 'mixed')
+def create_grouped_segmentation(subject, project, freesurfer_home:str, reference_ses:str = '01'):
 
-    ### Create Dict to store the metadata files from the niftis
-    ## This is based on the documentation here: 
-    ## https://github.com/jorgenriseth/gMRI2FEM/blob/f11a9961b3689250d7fd6cf41357dd7d99a53f68/src/gmri2fem/mixed_dicom.py#L71
-    meta = {}
-    subvolumes = ['SE-modulus', 'IR-corrected-real']
-    for subvol in subvolumes: 
-        sidecar_fn = op.join(mixed_dir, f'sub-{subject}_ses-{session}_acq-mixed_{subvol}.json')
+    # read csf segmentation file
+    mixed_dir = op.join(project, 'derivatives', 'csf_seg', f'sub-{subject}', f'ses-{reference_ses}')
+    out_dir = op.join(mixed_dir, 'segmentations')
 
-        # Open the file and parse the JSON data
-        with open(sidecar_fn, "r") as f:
-            sidecar_data = json.load(f)
-        
-        if 'SE' in subvol:
-            meta["TR_SE"] = sidecar_data['RepetitionTime'] * 1000
-            meta["TE"] = sidecar_data['EchoTime'] * 1000 
-            meta["ETL"] = sidecar_data['EchoTrainLength'] * 1000
+    csf_seg_fn = op.join(out_dir, f'sub-{subject}_seg-csf_seg.nii.gz')
+    csf_seg_mri = sm.load_mri(csf_seg_fn, dtype=np.uint8)
 
-        elif 'IR' in subvol: 
-            meta["TR_IR"] = sidecar_data['RepetitionTime'] * 1000
-            meta["TI"] = sidecar_data['InversionTime'] * 1000
+    grouped_seg_fn = op.join(out_dir, f"sub-{subject}_seg-csf_grouped.nii.gz")
+    grouped_lut_fn = op.join(out_dir, f"sub-{subject}_seg-csf_grouped_LUT.txt") 
 
-    print(f'Saving Metadata to {meta_fname}')
-    with open(meta_fname, "w") as f:
-        json.dump(meta, f)
+    # {group: [desc from LUT]}
+    groups = gather_groups()
 
-    return 
+    # Read LUT into pd.dataframe
+    lut_table = segtools.read_lut(op.join(freesurfer_home, 'FreeSurferColorLUT.txt'))
 
-def allsubs_t1_times(project):
+    # Gather all labels from 
+    labels = np.unique(csf_seg_mri.data[csf_seg_mri.data > 0])
 
-
-    '''Wrapper function to loop over subjects and sessions in the project.
+    ### Relabel labels in csf_seg that are not in groups as 'lateral'
+    ## Get master list of group descriptions
+    grouped_descriptions = sum(groups.values(), start=[])
+    ## Get master list of group labels
+    grouped_labels = [find_description_label(x, lut_table) for x in grouped_descriptions]
+    ## Add labels in csf_seg to groups under 'lateral' key
+    groups["lateral"] = [find_label_description(x, lut_table) for x in labels[~np.isin(labels, grouped_labels)] ]
     
-    Parameters:
-    ----------- 
-        project (str): The path to the project's root directory.
-    '''
-
-    ### Gathering list of subjects 
-    nifti_dir = op.join(project, 'sourcedata', 'nifti')
-    subs = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, 'sub-*'))])
-
-    ### Creating dict of subject:[session labels]  
-    scans = {}
-    for sub in subs: 
-        scans[sub] = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, f'sub-{sub}', 'ses-*'))])
+    # Get dict of numeric labels: {group : [numeric label from LUT]}
+    relabeling = {group: [segtools.find_description_label(x, lut_table) 
+                            for x in group_descriptions]
+                                for group, group_descriptions in groups.items()}
     
-    ### Looping over the sessions to estimate T1 times
-    for sub, sessions in scans.items(): 
-        print(f'Processing Subject {sub}')
-        for ses in sessions: 
-            print(f'\tProcessing Session {ses}')
-            estimate_t1_times(sub, ses, project)
+    grouped_seg = segtools.collapse(csf_seg_mri.data, relabeling)
+    grouped_seg_mri = sm.SimpleMRI(grouped_seg, csf_seg_mri.affine)
+    sm.save_mri(grouped_seg_mri, grouped_seg_fn, np.int16)
 
-def allsubs_reg_SE(project, greedy_fn): 
+    # Also create a lookup-table for identifying regions
+    grouped_lut = segtools.canonical_lut(relabeling, "jet", permute_colors=None)
 
-    '''Wrapper function to loop over subjects and sessions in the project.
+    segtools.write_lut(grouped_lut_fn, grouped_lut)
+
+def create_cvs_segmentation(subject, project, freesurfer_home:str, reference_ses:str = '01'):
+
+    # read csf segmentation file
+    mixed_dir = op.join(project, 'derivatives', 'csf_seg', f'sub-{subject}', f'ses-{reference_ses}')
+    out_dir = op.join(mixed_dir, 'segmentations')
+    csf_seg_fn = op.join(out_dir, f'sub-{subject}_seg-csf_seg.nii.gz')
+    csf_seg_mri = sm.load_mri(csf_seg_fn, dtype=np.uint8)
+
+    cvs_seg_fn = op.join(out_dir, f"sub-{subject}_seg-csf_sas-ventricle-cerebellum.nii.gz")
+    cvs_seg_lut_fn = op.join(out_dir, f'sub-{subject}_seg-csf_sas-ventricle-cerebellum-LUT.txt') 
+
+    lut_table = segtools.read_lut(op.join(freesurfer_home, 'FreeSurferColorLUT.txt'))
+
+    # Cerebellum Descriptions
+    cerebellum = ["Left-Cerebellum-Cortex", "Right-Cerebellum-Cortex"]
+    ventricles = gather_groups()['ventricles']
+
+    # Gathering Labels in csf_mask
+    labels = np.unique(csf_seg_mri.data[csf_seg_mri.data > 0])
+
+    # Creating C/V/S dict with relevent labels {group: [numeric label]}
+    relabeling = {"cerebellum": [find_description_label(x, lut_table) for x in cerebellum],
+                  "ventricles": [find_description_label(x, lut_table) for x in ventricles]}
+    ### SAS is all labels that are not cerebellum or ventricular 
+    relabeling["SAS"]= list(labels[~np.isin(labels, relabeling["cerebellum"] + relabeling["ventricles"])])
+
+    # Making Dict of the groups {group: [description from LUT]} 
+    groups = {desc: [find_label_description(x, lut_table) for x in group_labels]
+        for desc, group_labels in relabeling.items()}  
     
-    Parameters:
-    ----------- 
-        project (str): The path to the project's root directory.
-    '''
+    # Create LUT for segmentation 
+    cvs_lut = segtools.canonical_lut(relabeling, "viridis", permute_colors=None)
 
-    ### Gathering List of Subjects
-    nifti_dir = op.join(project, 'sourcedata', 'nifti')
-    subs = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, 'sub-*'))])
-
-    ### Looping over subjects
-    for sub in subs: 
-        register_SE_T1_greedy(sub, project, greedy_fn)
-
-def allsubs_reg_T1maps(project, greedy_fn): 
-
-    nifti_dir = op.join(project, 'sourcedata', 'nifti')
-    subs = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, 'sub-*'))])
-
-    for sub in subs: 
-        print(f'Registering T1 maps for {sub}')
-        register_T1maps_greedy(sub, project, greedy_fn)
-
-def register_SE_T1_greedy(subject: str, project: str, greedy_fn:str, reference_ses: str ='01'):
-
-    '''
-    Function to register the first SE scan to the T1 space. 
-
-    Parameters: 
-    -----------
-        subject (str): The Subject ID Number.
-        reference_ses (str): The SE session to align other images with. Default: Visit 1
-        greedy_fn (str): The path to the greedy sif file.
-        project (Path | str): The path to the project directory.
-
-    Returns: 
-    --------
-        sereg_basename (nifti) : Registered reference SE image.
-
-    '''
-
-    ### Directories 
-    mixed_dir = op.join(project, 'sourcedata', 'nifti', f'sub-{subject}', f'ses-{reference_ses}', 'mixed')
-    anat_dir = op.join(project, 'sourcedata', 'nifti', f'sub-{subject}', f'ses-{reference_ses}', 'anat')
-    out_dir = op.join(project, 'derivatives', 'csf_seg', f'sub-{subject}', f'ses-{reference_ses}')
-
-    ### Filenames 
-    se0_basename = f'sub-{subject}_ses-{reference_ses}_acq-mixed_SE-modulus.nii.gz'
-    sereg_basename = f'sub-{subject}_ses-{reference_ses}_acq-mixed_SE-modulus_registered.nii.gz' 
-    xfm_basename = f'sub-{subject}_ses-{reference_ses}_acq-mixed.mat'
-    t1_basename = f'sub-{subject}_ses-{reference_ses}_T1w.nii.gz'
-
-    ### Setting up the greedy container 
-    app_cmd = ['apptainer', 'exec', 
-                '--bind', f'{mixed_dir}:{mixed_dir}', 
-                '--bind', f'{anat_dir}:{anat_dir}', 
-                '--bind', f'{out_dir}:{out_dir}', 
-                greedy_fn]
-
-    ### Greedy Affine Registration
-    affine_cmd = ['greedy', '-d', '3', '-a', 
-                '-i', f'{anat_dir}/{t1_basename}', f'{mixed_dir}/{se0_basename}', 
-                '-o', f'{out_dir}/{xfm_basename}',
-                '-ia-image-centers', 
-                '-dof', '6', 
-                '-m', 'NMI']
-
-    subprocess.run(app_cmd + affine_cmd) 
-
-    ### Applying the Registration 
-    register_cmd = ['greedy', '-d', '3', 
-                '-rf', f'{anat_dir}/{t1_basename}', 
-                '-ri', 'NN', 
-                '-rm', f'{mixed_dir}/{se0_basename}', f'{out_dir}/{sereg_basename}',
-                '-r', f'{out_dir}/{xfm_basename}']
-
-    subprocess.run(app_cmd + register_cmd)
-
-    return 
-
-def register_T1maps_greedy(subject: str, project: str, greedy_fn:str, reference_ses: str ='01'):
-
-    '''
-    Function to register the non-reference SE scans to the T1 space of the SE reference scan. 
-
-    Parameters: 
-    -----------
-        subject (str): The Subject ID Number.
-        reference_ses (str): The SE session to align other images with. Default: Visit 1
-        greedy_fn (str): The path to the greedy sif file.
-        project (Path | str): The path to the project directory.
-
-    Returns: 
-    --------
-    '''
-
-    ### Directories 
-    nifti_dir = op.join(project, 'sourcedata', 'nifti')
-    ref_mixed_dir = op.join(nifti_dir, f'sub-{subject}', f'ses-{reference_ses}', 'mixed')
-    ref_anat_dir = op.join(nifti_dir, f'sub-{subject}', f'ses-{reference_ses}', 'anat')
-    ref_out_dir = op.join(project, 'derivatives', 'csf_seg', f'sub-{subject}', f'ses-{reference_ses}')
-
-    ### Filenames
-    ref_sereg_basename = f'sub-{subject}_ses-{reference_ses}_acq-mixed_SE-modulus_registered.nii.gz' 
-    ref_t1_basename = f'sub-{subject}_ses-{reference_ses}_T1w.nii.gz'
+    # Create segmentation for cerebellum, ventricular and SAS CSF
+    newseg = segtools.collapse(csf_seg_mri.data, relabeling)
+    newseg_mri = sm.SimpleMRI(newseg, csf_seg_mri.affine)
     
-    ### Gathering the list of Sessions for Subject
-    sessions = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, f'sub-{subject}', 'ses-*'))])
-
-    ### Looping over Sessions
-    for ses in sessions: 
-
-        print(f'Registering Sub-{subject} SE Session {ses} to SE Reference')
-
-        ### Session-Specific Directories 
-        mixed_dir = op.join(project, 'sourcedata', 'nifti', f'sub-{subject}', f'ses-{ses}', 'mixed')
-        anat_dir = op.join(project, 'sourcedata', 'nifti', f'sub-{subject}', f'ses-{ses}', 'anat')
-        out_dir = op.join(project, 'derivatives', 'csf_seg', f'sub-{subject}', f'ses-{ses}')
-
-        ### Session Specific Filenames
-        ses_se0_basename = f'sub-{subject}_ses-{ses}_acq-mixed_SE-modulus.nii.gz' 
-        ses_xfm_basename = f'sub-{subject}_ses-{ses}_acq-mixed.mat'
-        ses_t1_basename = f'sub-{subject}_ses-{ses}_T1w.nii.gz'
-        ses_t1map_basename = f'sub-{subject}_ses-{ses}_acq-mixed_T1map_postproc.nii.gz'
-        ses_t1map_reg_basename = f'sub-{subject}_ses-{ses}_acq-mixed_T1map_postproc_registered.nii.gz'
-
-        ### For the nonreference sessions, calculate the registration
-        if ses != reference_ses: 
-
-            app_cmd = ['apptainer', 'exec', 
-                '--bind', f'{mixed_dir}:{mixed_dir}', 
-                '--bind', f'{ref_anat_dir}:{ref_anat_dir}', 
-                '--bind', f'{out_dir}:{out_dir}', 
-                '--bind', f'{ref_out_dir}:{ref_out_dir}',
-                greedy_fn]
-
-            affine_cmd = ['greedy', '-d', '3', '-a', 
-                '-i', f'{ref_out_dir}/{ref_sereg_basename}', f'{mixed_dir}/{ses_se0_basename}', 
-                '-o', f'{out_dir}/{ses_xfm_basename}',
-                '-ia-image-centers', 
-                '-dof', '6', 
-                '-m', 'NCC', '5x5x5']
-            
-            subprocess.run(app_cmd + affine_cmd)
-        
-        ### For the reference Session, just setup the container 
-        else: 
-
-            app_cmd = ['apptainer', 'exec', 
-                '--bind', f'{mixed_dir}:{mixed_dir}', 
-                '--bind', f'{ref_anat_dir}:{ref_anat_dir}', 
-                '--bind', f'{out_dir}:{out_dir}', 
-                greedy_fn]
-
-        print(f'Aligning Sub-{subject} T1Map Session {ses} to T1 Reference')
-
-        ### Apply the registration to the session to get it into the SE registered space for reference scan
-        register_cmd = ['greedy', '-d', '3', 
-            '-rf', f'{ref_anat_dir}/{ref_t1_basename}', 
-            '-ri', 'NN', 
-            '-rm', f'{out_dir}/{ses_t1map_basename}', f'{out_dir}/{ses_t1map_reg_basename}',
-            '-r', f'{out_dir}/{ses_xfm_basename}']
-
-        subprocess.run(app_cmd + register_cmd)
-
-    return
-
-def create_R1_map(subject:str, session:str, project: str):
-
-    out_dir = op.join(project, 'derivatives', 'csf_seg', f'sub-{subject}', f'ses-{session}')
-    t1map_basename = f'sub-{subject}_ses-{session}_acq-mixed_T1map_postproc_registered.nii.gz'
-    r1map_basename = f'sub-{subject}_ses-{session}_acq-mixed_R1map_postproc.nii.gz'
-    
-    t1map_im = nib.load(op.join(out_dir, t1map_basename))
-    t1map_data = t1map_im.get_fdata()
-    r1map_data = np.divide(1000, t1map_data, where = (t1map_data != 0), out= np.zeros_like(t1map_data))
-
-    nib.save(nib.Nifti1Image(r1map_data, t1map_im.affine), op.join(out_dir, r1map_basename))
-
-def allsubs_R1maps(project): 
+    # Save the segementation and the LUT
+    sm.save_mri(newseg_mri, cvs_seg_fn, np.int16)
+    segtools.write_lut(cvs_seg_lut_fn, cvs_lut)
 
 
-    '''Wrapper function to loop over subjects and sessions in the project.
-    
-    Parameters:
-    ----------- 
-        project (str): The path to the project's root directory.
-    '''
 
-    ### Gathering list of subjects 
-    nifti_dir = op.join(project, 'sourcedata', 'nifti')
-    subs = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, 'sub-*'))])
 
-    ### Creating dict of subject:[session labels]  
-    scans = {}
-    for sub in subs: 
-        scans[sub] = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, f'sub-{sub}', 'ses-*'))])
-    
-    ### Looping over the sessions to estimate T1 times
-    for sub, sessions in scans.items(): 
-        print(f'Processing Subject {sub}')
-        for ses in sessions: 
-            print(f'\tProcessing Session {ses}')
-            create_R1_map(sub, ses, project)
+
+
+
+
+
