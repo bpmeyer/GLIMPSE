@@ -26,28 +26,21 @@ Run any command inside that environment with `pixi run <command>`, or drop
 into a shell with `pixi shell`. Run `pixi task list` to see the full, current
 list. The common ones:
 
-**OSA pipeline**
-
-| Task | What it does |
-| --- | --- |
-| `pixi run heudiconv-osa` | Convert GLIMPSE-OSA DICOMs to BIDS niftis |
-
 **Shared** (work on any registered/BIDS project directory under `/mnt/cina`)
+
+Run roughly in this order: `download-xnat` first, then `heudiconv` to convert
+that project's DICOMs to BIDS niftis, then the rest of the pipeline.
 
 | Task | What it does |
 | --- | --- |
 | `pixi run download-xnat` | Download a project's session data from XNAT |
+| `pixi run heudiconv` | Convert a project's DICOMs to BIDS niftis (after `download-xnat`) |
 | `pixi run recon-all-parallel` | Run FreeSurfer recon-all in parallel across subjects |
-| `pixi run freesurfer-qa` | Open a subject's FreeSurfer output in freeview for QA |
+| `pixi run freesurfer-qa` | Open subjects' FreeSurfer output in freeview for QA |
 | `pixi run segment-pvs` | Run segcsvd PVS segmentation over every session |
+| `pixi run anat-masks` | Make anatomical-space tissue masks from FreeSurfer aparc+aseg |
 
 Details and flags for each task:
-
-<details>
-<summary><code>pixi run heudiconv-osa</code></summary>
-
-Convert GLIMPSE-OSA DICOMs to BIDS niftis. See `OSA/run_heudiconv_osa.sh`.
-</details>
 
 <details>
 <summary><code>pixi run download-xnat</code></summary>
@@ -68,20 +61,37 @@ Example: `pixi run download-xnat GLIMPSE_OSA --dicom`
 </details>
 
 <details>
+<summary><code>pixi run heudiconv</code></summary>
+
+Convert a project's DICOMs to BIDS niftis, after `download-xnat` has fetched
+them. Dispatches to that project's heudiconv script (`OSA/run_heudiconv_osa.sh`
+or `WISP/run_heudiconv_wisp.sh`); any extra args are passed straight through.
+
+```
+pixi run heudiconv PROJECT [ARGS...]
+```
+
+- `PROJECT` — `osa` or `wisp`.
+
+Example: `pixi run heudiconv osa`
+</details>
+
+<details>
 <summary><code>pixi run recon-all-parallel</code></summary>
 
 Run FreeSurfer recon-all in parallel across subjects, for any BIDS project
 directory.
 
 ```
-pixi run recon-all-parallel PROJECT [--n-cpus N] [--use-t2] [--sessions SES [SES ...]]
+pixi run recon-all-parallel PROJECT [--n-cpus N] [--use-t2] [--subj SUB [SUB ...]] [--ses SES [SES ...]]
 ```
 
 - `PROJECT` — project directory name under `/mnt/cina`, e.g. `GLIMPSE_OSA`.
 - `--n-cpus` — default 8, capped at 8. FreeSurfer uses ~24GB of memory per
   job.
 - `--use-t2` — use the matching T2w image to refine the pial surface, if available.
-- `--sessions` — only run for these sessions, e.g. `--sessions ses-01 ses-02`.
+- `--subj` — only run for these subjects, e.g. `--subj sub-001 sub-002`.
+- `--ses` — only run for these sessions, e.g. `--ses ses-01 ses-02`.
 
 Example: `pixi run recon-all-parallel GLIMPSE_OSA --use-t2`
 </details>
@@ -89,18 +99,21 @@ Example: `pixi run recon-all-parallel GLIMPSE_OSA --use-t2`
 <details>
 <summary><code>pixi run freesurfer-qa</code></summary>
 
-Open a subject/session's FreeSurfer output (T1, brainmask, aparc+aseg,
-white/pial surfaces) in freeview, then prompt for a pass/fail QA result and
-log it to `derivatives/freesurfer/qa_log.csv`. A comment is required on fail.
+For each subject/session, opens its FreeSurfer output (T1, brainmask,
+aparc+aseg, white/pial surfaces) in freeview, then prompts for a pass/fail
+QA result and logs it to `derivatives/freesurfer/qa_log.csv`. A comment is
+required on fail.
 
 ```
-pixi run freesurfer-qa PROJECT --subject SUBJECT_ID
+pixi run freesurfer-qa PROJECT [--subj SUBJECT_ID [SUBJECT_ID ...]]
 ```
 
 - `PROJECT` — project directory name under `/mnt/cina`, e.g. `GLIMPSE_OSA`.
-- `--subject` — required. Subject/session id to QA, e.g. `sub-001_ses-01`.
+- `--subj` — one or more subject/session ids to QA, e.g. `sub-001_ses-01`.
+  If omitted, loops through every subject with completed recon-all output
+  that isn't already in `qa_log.csv`.
 
-Example: `pixi run freesurfer-qa GLIMPSE_OSA --subject sub-001_ses-01`
+Example: `pixi run freesurfer-qa GLIMPSE_OSA --subj sub-001_ses-01`
 </details>
 
 <details>
@@ -111,27 +124,55 @@ every session in a project that already has FreeSurfer synthseg output.
 Sessions missing that output, or already segmented, are skipped.
 
 ```
-pixi run segment-pvs PROJECT [--sessions SES [SES ...]] [--sif SIF] [--skip-mask-and-bias] [--no-cleanup] [--seg-pvs-thr THR] [--n-threads N]
+pixi run segment-pvs PROJECT [--subj SUB [SUB ...]] [--ses SES [SES ...]] [--sif SIF] [--skip-mask-and-bias] [--no-cleanup] [--seg-pvs-thr THR] [--n-threads N] [--thr-only]
 ```
 
 - `PROJECT` — project directory name under `/mnt/cina`, e.g. `GLIMPSE_OSA`.
+- `--subj` — only run for these subjects, e.g. `--subj sub-001 sub-002`.
+- `--ses` — only run for these sessions, e.g. `--ses ses-01 ses-02`.
 - `--seg-pvs-thr` — probability threshold used to binarize the output. Default 0.35.
 - `--n-threads` — default 32. Caps CPU threads used inside the container
   (`OMP_NUM_THREADS`/`ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS`), since the
   shared machine has no working cgroup-based resource limiting.
 - `--sif` — path to the segcsvd apptainer image, if not using the shared default.
 - `--skip-mask-and-bias` / `--no-cleanup` — passed straight through to segcsvd.
+- `--thr-only` — skip the full pipeline and just re-binarize each session's
+  existing `seg_pvs.nii.gz` at `--seg-pvs-thr`, writing a new
+  `..._seg_pvs_thr_{thr}.nii.gz` without re-running segmentation.
 
-Example: `pixi run segment-pvs GLIMPSE_OSA --sessions ses-01`
+Example: `pixi run segment-pvs GLIMPSE_OSA --ses ses-01`
+</details>
+
+<details>
+<summary><code>pixi run anat-masks</code></summary>
+
+For each subject/session with FreeSurfer output, resamples `aparc+aseg.mgz`
+into native (rawavg) space, then uses `mri_binarize` to extract five tissue
+masks: ventricles, cerebral WM, cortical GM, subcortical GM, and CSF.
+Sessions without FreeSurfer `aparc+aseg.mgz` are skipped. Each step (the
+resample, and each of the 5 masks) is skipped individually if its output
+already exists.
+
+```
+pixi run anat-masks PROJECT [--subj SUB [SUB ...]] [--ses SES [SES ...]] [--resample-only] [--force]
+```
+
+- `PROJECT` — project directory name under `/mnt/cina`, e.g. `GLIMPSE_OSA`.
+- `--subj` — only run for these subjects, e.g. `--subj sub-001 sub-002`.
+- `--ses` — only run for these sessions, e.g. `--ses ses-01 ses-02`.
+- `--resample-only` — only run the aparc+aseg-in-rawavg resample step, skipping `mri_binarize` entirely.
+- `--force` — re-run every step even if its output already exists.
+
+Example: `pixi run anat-masks GLIMPSE_OSA --subj 001`
 </details>
 
 ## Pipeline
 
 Steps are:
 
-1. download dicoms from xnat
+1. download dicoms from xnat (`pixi run download-xnat`)
 
-2. convert dicoms to BIDS niftis using heudiconv image 
+2. convert dicoms to BIDS niftis using heudiconv image (`pixi run heudiconv`)
 
 3. Edit BIDS .json sidecars for Philips data. Philips dicoms do not include     slice timing, phase encode polarity and this info must be included for fmriprep. The fmap and func images must also be linked via the .json meta data.
 
