@@ -13,6 +13,9 @@ import subprocess
 import numpy as np
 import simple_mri as sm
 from gmri2fem.csf_segmentation import create_csf_seg
+import shlex 
+
+FREESURFER_HOME = "/usr/local/freesurfer/stable8"
 
 def estimate_t1_times(subject: str, session: str, project: str):
 
@@ -103,7 +106,22 @@ def make_mixed_meta(subject:str, session: str, meta_fname:str, project:str):
 
     return 
 
-def register_SE_T1_greedy(subject: str, project: str, greedy_fn:str, reference_ses: str ='01'):
+def convert_mgz_to_nifti(subject, project, freesurfer_home, reference_ses='01'): 
+
+    mri_dir = op.join(project, 'derivatives', 'freesurfer', 
+                      f'sub-{subject}_ses-{reference_ses}', 'mri')
+
+    cmd = ['mri_convert', '--out-orientation', 'RAS', f'{mri_dir}/T1.mgz', f'{mri_dir}/T1.nii.gz']
+
+    shell_cmd = (
+        f"export FREESURFER_HOME={shlex.quote(FREESURFER_HOME)} && "
+        f"source ${{FREESURFER_HOME}}/SetUpFreeSurfer.sh && "
+        f"{shlex.join(cmd)}"
+    )
+
+    return subprocess.run(["bash", "-c", shell_cmd], capture_output=True, text=True)
+
+def register_SE_T1_greedy(subject: str, project: str, greedy_fn:str, freesurfer_home, reference_ses: str ='01'):
 
     '''
     Function to register the first SE scan to the T1 space. 
@@ -123,25 +141,28 @@ def register_SE_T1_greedy(subject: str, project: str, greedy_fn:str, reference_s
 
     ### Directories 
     mixed_dir = op.join(project, 'sourcedata', 'nifti', f'sub-{subject}', f'ses-{reference_ses}', 'mixed')
-    anat_dir = op.join(project, 'sourcedata', 'nifti', f'sub-{subject}', f'ses-{reference_ses}', 'anat')
+    mri_dir = op.join(project, 'derivatives', 'freesurfer', f'sub-{subject}_ses-{reference_ses}', 'mri')
     out_dir = op.join(project, 'derivatives', 'csf_seg', f'sub-{subject}', f'ses-{reference_ses}')
 
     ### Filenames 
     se0_basename = f'sub-{subject}_ses-{reference_ses}_acq-mixed_SE-modulus.nii.gz'
     sereg_basename = f'sub-{subject}_ses-{reference_ses}_acq-mixed_SE-modulus_registered.nii.gz' 
     xfm_basename = f'sub-{subject}_ses-{reference_ses}_acq-mixed.mat'
-    t1_basename = f'sub-{subject}_ses-{reference_ses}_T1w.nii.gz'
+    t1_basename = f'T1.nii.gz' 
+
+    if not op.isfile(op.join(mri_dir, t1_basename)):
+        convert_mgz_to_nifti(subject, project, freesurfer_home, reference_ses)
 
     ### Setting up the greedy container 
     app_cmd = ['apptainer', 'exec', 
                 '--bind', f'{mixed_dir}:{mixed_dir}', 
-                '--bind', f'{anat_dir}:{anat_dir}', 
+                '--bind', f'{mri_dir}:{mri_dir}', 
                 '--bind', f'{out_dir}:{out_dir}', 
                 greedy_fn]
 
     ### Greedy Affine Registration
     affine_cmd = ['greedy', '-d', '3', '-a', 
-                '-i', f'{anat_dir}/{t1_basename}', f'{mixed_dir}/{se0_basename}', 
+                '-i', f'{mri_dir}/{t1_basename}', f'{mixed_dir}/{se0_basename}', 
                 '-o', f'{out_dir}/{xfm_basename}',
                 '-ia-image-centers', 
                 '-dof', '6', 
@@ -151,7 +172,7 @@ def register_SE_T1_greedy(subject: str, project: str, greedy_fn:str, reference_s
 
     ### Applying the Registration 
     register_cmd = ['greedy', '-d', '3', 
-                '-rf', f'{anat_dir}/{t1_basename}', 
+                '-rf', f'{mri_dir}/{t1_basename}', 
                 '-ri', 'NN', 
                 '-rm', f'{mixed_dir}/{se0_basename}', f'{out_dir}/{sereg_basename}',
                 '-r', f'{out_dir}/{xfm_basename}']
@@ -179,12 +200,12 @@ def register_T1maps_greedy(subject: str, project: str, greedy_fn:str, reference_
     ### Directories 
     nifti_dir = op.join(project, 'sourcedata', 'nifti')
     ref_mixed_dir = op.join(nifti_dir, f'sub-{subject}', f'ses-{reference_ses}', 'mixed')
-    ref_anat_dir = op.join(nifti_dir, f'sub-{subject}', f'ses-{reference_ses}', 'anat')
+    ref_mri_dir = op.join(project, 'derivatives', 'freesurfer', f'sub-{subject}_ses-{reference_ses}', 'mri')
     ref_out_dir = op.join(project, 'derivatives', 'csf_seg', f'sub-{subject}', f'ses-{reference_ses}')
 
     ### Filenames
     ref_sereg_basename = f'sub-{subject}_ses-{reference_ses}_acq-mixed_SE-modulus_registered.nii.gz' 
-    ref_t1_basename = f'sub-{subject}_ses-{reference_ses}_T1w.nii.gz'
+    ref_t1_basename = f'T1.nii.gz'
     
     ### Gathering the list of Sessions for Subject
     sessions = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, f'sub-{subject}', 'ses-*'))])
@@ -196,13 +217,12 @@ def register_T1maps_greedy(subject: str, project: str, greedy_fn:str, reference_
 
         ### Session-Specific Directories 
         mixed_dir = op.join(project, 'sourcedata', 'nifti', f'sub-{subject}', f'ses-{ses}', 'mixed')
-        anat_dir = op.join(project, 'sourcedata', 'nifti', f'sub-{subject}', f'ses-{ses}', 'anat')
+        mri_dir = op.join(project, 'derivatives', 'freesurfer', f'sub-{subject}_ses-{ses}', 'mri')
         out_dir = op.join(project, 'derivatives', 'csf_seg', f'sub-{subject}', f'ses-{ses}')
 
         ### Session Specific Filenames
         ses_se0_basename = f'sub-{subject}_ses-{ses}_acq-mixed_SE-modulus.nii.gz' 
         ses_xfm_basename = f'sub-{subject}_ses-{ses}_acq-mixed.mat'
-        ses_t1_basename = f'sub-{subject}_ses-{ses}_T1w.nii.gz'
         ses_t1map_basename = f'sub-{subject}_ses-{ses}_acq-mixed_T1map_postproc.nii.gz'
         ses_t1map_reg_basename = f'sub-{subject}_ses-{ses}_acq-mixed_T1map_postproc_registered.nii.gz'
 
@@ -211,7 +231,7 @@ def register_T1maps_greedy(subject: str, project: str, greedy_fn:str, reference_
 
             app_cmd = ['apptainer', 'exec', 
                 '--bind', f'{mixed_dir}:{mixed_dir}', 
-                '--bind', f'{ref_anat_dir}:{ref_anat_dir}', 
+                '--bind', f'{ref_mri_dir}:{ref_mri_dir}', 
                 '--bind', f'{out_dir}:{out_dir}', 
                 '--bind', f'{ref_out_dir}:{ref_out_dir}',
                 greedy_fn]
@@ -230,7 +250,7 @@ def register_T1maps_greedy(subject: str, project: str, greedy_fn:str, reference_
 
             app_cmd = ['apptainer', 'exec', 
                 '--bind', f'{mixed_dir}:{mixed_dir}', 
-                '--bind', f'{ref_anat_dir}:{ref_anat_dir}', 
+                '--bind', f'{ref_mri_dir}:{ref_mri_dir}', 
                 '--bind', f'{out_dir}:{out_dir}', 
                 greedy_fn]
 
@@ -238,7 +258,7 @@ def register_T1maps_greedy(subject: str, project: str, greedy_fn:str, reference_
 
         ### Apply the registration to the session to get it into the SE registered space for reference scan
         register_cmd = ['greedy', '-d', '3', 
-            '-rf', f'{ref_anat_dir}/{ref_t1_basename}', 
+            '-rf', f'{ref_mri_dir}/{ref_t1_basename}', 
             '-ri', 'NN', 
             '-rm', f'{out_dir}/{ses_t1map_basename}', f'{out_dir}/{ses_t1map_reg_basename}',
             '-r', f'{out_dir}/{ses_xfm_basename}']
@@ -258,47 +278,5 @@ def create_R1_map(subject:str, session:str, project: str):
     r1map_data = np.divide(1000, t1map_data, where = (t1map_data != 0), out= np.zeros_like(t1map_data))
 
     nib.save(nib.Nifti1Image(r1map_data, t1map_im.affine), op.join(out_dir, r1map_basename))
-
-def register_aseg(subject:str, project:str, reference_ses: str ='01'): 
-
-    fs_dir = op.join(project, 'derivatives', 'freesurfer', 
-                     f'sub-{subject}_ses-{reference_ses}', 'mri')
-    anat_dir = op.join(project, 'sourcedata', 'nifti', 
-                     f'sub-{subject}', f'ses-{reference_ses}', 'anat')
-
-    aseg_fn = op.join(fs_dir, 'aparc+aseg.mgz')
-    aseg_nat_fn = op.join(fs_dir, 'aparc+aseg_native.mgz') 
-    t1_fn = op.join(anat_dir, f'sub-{subject}_ses-{reference_ses}_T1w.nii.gz')
-    
-    aseg_im = ants.image_read(aseg_fn)
-    t1_im = ants.image_read(t1_fn)
-
-    xfm = ants.registration(fixed = t1_im, moving = aseg_im, 
-                            type_of_transform='Rigid')
-
-    aseg_reg_im = ants.apply_transforms(fixed = t1_im, moving=aseg_im, 
-                                       transformlist = xfm['fwdtransforms'], 
-                                       interpolator='nearestNeighbor')
-
-    ants.image_write(aseg_reg_im, aseg_nat_fn)
-
-def seg_csf(subject, project, reference_ses:str ='01'): 
-
-    os.environ['FREESURFER_HOME'] = '/usr/local/freesurfer/stable8'
-
-    fs_dir = op.join(project, 'derivatives', 'freesurfer', 
-                     f'sub-{subject}_ses-{reference_ses}', 'mri')
-    mixed_dir = op.join(project, 'derivatives', 'csf_seg', f'sub-{subject}', f'ses-{reference_ses}')
-
-    aseg_fn = op.join(fs_dir, 'aparc+aseg.mgz') 
-    sereg_fn = op.join(mixed_dir, f'sub-{subject}_ses-{reference_ses}_acq-mixed_SE-modulus_registered.nii.gz') 
-    csf_seg_fn = op.join(mixed_dir, f'sub-{subject}_seg-csf_mask.nii.gz')
-
-    sreg_im = sm.load_mri(sereg_fn, dtype=np.float32)
-    aseg_im = sm.load_mri(aseg_fn, dtype=np.int16)
-
-    csf_seg_im = create_csf_seg(aseg_im, sreg_im)
-
-    sm.save_mri(csf_seg_im, csf_seg_fn, dtype=np.uint8)
 
 
