@@ -206,11 +206,3 @@ def create_cvs_segmentation(subject, project, freesurfer_home:str, reference_ses
     sm.save_mri(newseg_mri, cvs_seg_fn, np.int16)
     segtools.write_lut(cvs_seg_lut_fn, cvs_lut)
 
-
-
-
-
-
-
-
-
