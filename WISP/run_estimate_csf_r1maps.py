@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 PROJECT = Path("/mnt/cina/GLIMPSE_WISP/data")
-FREESURFER_HOME = Path('/usr/local/freesurfer/stable8')
+FREESURFER_HOME = Path('/usr/local/freesurfer/8.0.0')
 greedy_fn = '/mnt/home/jdromero/Packages/greedy.sif'
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -15,13 +15,12 @@ if __name__ == "__main__":
 
     ### Gathering list of subjects 
     nifti_dir = op.join(PROJECT, 'sourcedata', 'nifti')
-    subs = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, 'sub-*'))])
-    
+    #subs = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, 'sub-*'))])
+    subs = [f'00{i}' for i in range(1, 9)]
     # Gather List of Subjects
     for subject in subs:
         
         print(f'Processiong Subject {subject}')
-        
         # Sorted list of Sessions for Subject
         sessions = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, f'sub-{subject}', 'ses-*'))]) 
 
