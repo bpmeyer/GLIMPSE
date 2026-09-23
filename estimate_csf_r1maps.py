@@ -15,7 +15,7 @@ import simple_mri as sm
 from gmri2fem.csf_segmentation import create_csf_seg
 import shlex 
 
-FREESURFER_HOME = "/usr/local/freesurfer/stable8"
+FREESURFER_HOME = "/usr/local/freesurfer/8.0.0"
 
 def estimate_t1_times(subject: str, session: str, project: str):
 
@@ -111,15 +111,25 @@ def convert_mgz_to_nifti(subject, project, freesurfer_home, reference_ses='01'):
     mri_dir = op.join(project, 'derivatives', 'freesurfer', 
                       f'sub-{subject}_ses-{reference_ses}', 'mri')
 
-    cmd = ['mri_convert', '--out-orientation', 'RAS', f'{mri_dir}/T1.mgz', f'{mri_dir}/T1.nii.gz']
+    for fs_bn in ['T1.mgz', 'aparc+aseg.mgz']: 
+        nii_bn = fs_bn.replace('.mgz', '.nii.gz')
+        cmd = ['mri_convert', f'{mri_dir}/{fs_bn}', f'{mri_dir}/{nii_bn}']
 
-    shell_cmd = (
-        f"export FREESURFER_HOME={shlex.quote(FREESURFER_HOME)} && "
-        f"source ${{FREESURFER_HOME}}/SetUpFreeSurfer.sh && "
-        f"{shlex.join(cmd)}"
-    )
+        shell_cmd = (
+            f"export FREESURFER_HOME={shlex.quote(FREESURFER_HOME)} && "
+            f"source ${{FREESURFER_HOME}}/SetUpFreeSurfer.sh && "
+            f"{shlex.join(cmd)}"
+        )
 
-    return subprocess.run(["bash", "-c", shell_cmd], capture_output=True, text=True)
+        subprocess.run(["bash", "-c", shell_cmd], capture_output=True, text=True)
+
+        im = nib.load(op.join(mri_dir, nii_bn))
+        ras_im = nib.as_closest_canonical(im)
+        ras_im = nib.Nifti1Image(ras_im.get_fdata(), ras_im.affine)
+        ras_fn = nii_bn.replace('.nii.gz', '_ras.nii.gz')
+        ras_im.to_filename(op.join(mri_dir, ras_fn))
+
+    return
 
 def register_SE_T1_greedy(subject: str, project: str, greedy_fn:str, freesurfer_home, reference_ses: str ='01'):
 
@@ -148,10 +158,10 @@ def register_SE_T1_greedy(subject: str, project: str, greedy_fn:str, freesurfer_
     se0_basename = f'sub-{subject}_ses-{reference_ses}_acq-mixed_SE-modulus.nii.gz'
     sereg_basename = f'sub-{subject}_ses-{reference_ses}_acq-mixed_SE-modulus_registered.nii.gz' 
     xfm_basename = f'sub-{subject}_ses-{reference_ses}_acq-mixed.mat'
-    t1_basename = f'T1.nii.gz' 
+    t1_basename = f'T1_ras.nii.gz' 
 
-    if not op.isfile(op.join(mri_dir, t1_basename)):
-        convert_mgz_to_nifti(subject, project, freesurfer_home, reference_ses)
+    # if not op.isfile(op.join(mri_dir, t1_basename)):
+    convert_mgz_to_nifti(subject, project, freesurfer_home, reference_ses)
 
     ### Setting up the greedy container 
     app_cmd = ['apptainer', 'exec', 
@@ -179,6 +189,9 @@ def register_SE_T1_greedy(subject: str, project: str, greedy_fn:str, freesurfer_
 
     subprocess.run(app_cmd + register_cmd)
 
+    # Make sure the registered image is in RAS 
+    sereg_img = nib.load(op.join(out_dir, sereg_basename))
+
     return 
 
 def register_T1maps_greedy(subject: str, project: str, greedy_fn:str, reference_ses: str ='01'):
@@ -205,7 +218,7 @@ def register_T1maps_greedy(subject: str, project: str, greedy_fn:str, reference_
 
     ### Filenames
     ref_sereg_basename = f'sub-{subject}_ses-{reference_ses}_acq-mixed_SE-modulus_registered.nii.gz' 
-    ref_t1_basename = f'T1.nii.gz'
+    ref_t1_basename = f'T1_ras.nii.gz'
     
     ### Gathering the list of Sessions for Subject
     sessions = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, f'sub-{subject}', 'ses-*'))])

@@ -20,33 +20,9 @@ from gmri2fem.segmentation_refinement import extrapolate_segmentation_to_mask
 from gmri2fem import segment_tools as segtools
 from gmri2fem.segment_tools import find_description_label, find_label_description
 
-
-def register_aseg(subject:str, project:str, reference_ses: str ='01'): 
-
-    fs_dir = op.join(project, 'derivatives', 'freesurfer', 
-                     f'sub-{subject}_ses-{reference_ses}', 'mri')
-    anat_dir = op.join(project, 'sourcedata', 'nifti', 
-                     f'sub-{subject}', f'ses-{reference_ses}', 'anat')
-
-    aseg_fn = op.join(fs_dir, 'aparc+aseg.mgz')
-    aseg_nat_fn = op.join(fs_dir, 'aparc+aseg_native.mgz') 
-    t1_fn = op.join(anat_dir, f'sub-{subject}_ses-{reference_ses}_T1w.nii.gz')
-    
-    aseg_im = ants.image_read(aseg_fn)
-    t1_im = ants.image_read(t1_fn)
-
-    xfm = ants.registration(fixed = t1_im, moving = aseg_im, 
-                            type_of_transform='Rigid')
-
-    aseg_reg_im = ants.apply_transforms(fixed = t1_im, moving=aseg_im, 
-                                       transformlist = xfm['fwdtransforms'], 
-                                       interpolator='nearestNeighbor')
-
-    ants.image_write(aseg_reg_im, aseg_nat_fn)
-
 def create_csf_segmentation(subject, project, reference_ses:str ='01'): 
 
-    os.environ['FREESURFER_HOME'] = '/usr/local/freesurfer/stable8'
+    os.environ['FREESURFER_HOME'] = '/usr/local/freesurfer/8.0.0'
 
     fs_dir = op.join(project, 'derivatives', 'freesurfer', 
                      f'sub-{subject}_ses-{reference_ses}', 'mri')
@@ -76,14 +52,14 @@ def create_csf_segmentation(subject, project, reference_ses:str ='01'):
                 dtype=aseg_im.data.dtype)
     
     ### Create CSF Mask 
-    csf_mask_data = create_csf_mask(sereg_im.data)
+    csf_mask_data = create_csf_mask(sereg_im.data, use_li=True)
     csf_mask_im = sm.SimpleMRI(csf_mask_data, sereg_im.affine)
     sm.save_mri(csf_mask_im, 
                 op.join(out_dir, f'sub-{subject}_seg-csf_mask.nii.gz'), 
                 dtype=np.int16)
 
     ### Extrapolate 
-    csf_seg_im = extrapolate_segmentation_to_mask(precsf_seg_im, csf_mask_im)
+    csf_seg_im = extrapolate_segmentation_to_mask(aseg_im, csf_mask_im)
     sm.save_mri(csf_seg_im, 
                 op.join(out_dir, f'sub-{subject}_seg-csf_seg.nii.gz'), 
                 dtype=np.uint8)
@@ -115,12 +91,14 @@ def gather_groups():
                                "Entorhinal", "Parahippocampal"])
     insula = _desc_to_cortex_labels(["Insula"])
     
-    return {"ventricles": ventricles,
-            "infratentorial": infratentorial,
-            "basal": basal,
-            "medial": medial,
-            "insula": insula
-            }
+    groups =  {"ventricles": ventricles, 
+               "infratentorial": infratentorial,
+               "basal": basal,
+               "medial": medial,
+               "insula": insula
+                }
+    
+    return groups
 
 def create_grouped_segmentation(subject, project, freesurfer_home:str, reference_ses:str = '01'):
 
@@ -139,23 +117,24 @@ def create_grouped_segmentation(subject, project, freesurfer_home:str, reference
 
     # Read LUT into pd.dataframe
     lut_table = segtools.read_lut(op.join(freesurfer_home, 'FreeSurferColorLUT.txt'))
-
+    
     # Gather all labels from 
     labels = np.unique(csf_seg_mri.data[csf_seg_mri.data > 0])
-
+    
     ### Relabel labels in csf_seg that are not in groups as 'lateral'
     ## Get master list of group descriptions
     grouped_descriptions = sum(groups.values(), start=[])
     ## Get master list of group labels
     grouped_labels = [find_description_label(x, lut_table) for x in grouped_descriptions]
+    
     ## Add labels in csf_seg to groups under 'lateral' key
     groups["lateral"] = [find_label_description(x, lut_table) for x in labels[~np.isin(labels, grouped_labels)] ]
-    
+
     # Get dict of numeric labels: {group : [numeric label from LUT]}
     relabeling = {group: [segtools.find_description_label(x, lut_table) 
                             for x in group_descriptions]
                                 for group, group_descriptions in groups.items()}
-    
+
     grouped_seg = segtools.collapse(csf_seg_mri.data, relabeling)
     grouped_seg_mri = sm.SimpleMRI(grouped_seg, csf_seg_mri.affine)
     sm.save_mri(grouped_seg_mri, grouped_seg_fn, np.int16)
