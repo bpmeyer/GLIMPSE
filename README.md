@@ -35,10 +35,12 @@ that project's DICOMs to BIDS niftis, then the rest of the pipeline.
 | --- | --- |
 | `pixi run download-xnat` | Download a project's session data from XNAT |
 | `pixi run heudiconv` | Convert a project's DICOMs to BIDS niftis (after `download-xnat`) |
+| `pixi run philips-bids` | Update Philips BIDS JSON sidecars (slice timing, phase encoding, B0 field metadata) |
 | `pixi run recon-all-parallel` | Run FreeSurfer recon-all in parallel across subjects |
 | `pixi run freesurfer-qa` | Open subjects' FreeSurfer output in freeview for QA |
 | `pixi run segment-pvs` | Run segcsvd PVS segmentation over every session |
 | `pixi run anat-masks` | Make anatomical-space tissue masks from FreeSurfer aparc+aseg |
+| `pixi run pvs-volumes` | Tabulate PVS volume per subject/session from segcsvd + anat-masks output |
 
 Details and flags for each task:
 
@@ -74,6 +76,26 @@ pixi run heudiconv PROJECT [ARGS...]
 - `PROJECT` — `osa` or `wisp`.
 
 Example: `pixi run heudiconv osa`
+</details>
+
+<details>
+<summary><code>pixi run philips-bids</code></summary>
+
+Update Philips BIDS JSON sidecars for a project's `sourcedata/nifti` tree, after
+`heudiconv`. Philips DICOMs don't include slice timing or phase-encode
+polarity, and the fmap/func images aren't yet linked via metadata; this fills
+in `SliceTiming`, `PhaseEncodingDirection`, and `B0FieldSource`/
+`B0FieldIdentifier` for every BOLD run and its func fieldmaps.
+
+```
+pixi run philips-bids PROJECT [--nifti-subdir NIFTI_SUBDIR]
+```
+
+- `PROJECT` — project directory name under `/mnt/cina`, e.g. `GLIMPSE_OSA`.
+- `--nifti-subdir` — name of the `sourcedata` subdirectory holding the BIDS
+  nifti tree (default: `nifti`).
+
+Example: `pixi run philips-bids GLIMPSE_WISP`
 </details>
 
 <details>
@@ -166,6 +188,33 @@ pixi run anat-masks PROJECT [--subj SUB [SUB ...]] [--ses SES [SES ...]] [--resa
 Example: `pixi run anat-masks GLIMPSE_OSA --subj 001`
 </details>
 
+<details>
+<summary><code>pixi run pvs-volumes</code></summary>
+
+For each subject/session, combines `segment-pvs`'s thresholded PVS mask with
+`anat-masks`'s cerebral-WM-no-basal-ganglia and basal-ganglia masks (all in
+native T1w/rawavg space) to tabulate PVS volume, split into cerebral WM vs.
+basal ganglia. Also reports total ventricle and CSF volume (from
+`anat-masks`, as atrophy/ventricular-enlargement proxies, not PVS-related).
+Sessions missing any input, or where the masks don't share a voxel grid, are
+skipped. Writes one project-wide CSV, fully rebuilt each run, to
+`derivatives/pvs_volumes.csv` with columns `subject`, `session`, `visit`,
+`total_vol`, `cerewm_vol`, `bg_vol`, `ventricle_vol`, `csf_vol` (volumes in
+mm^3; `visit` is `v1` for ses-101/102, `v2` for ses-201/202).
+
+```
+pixi run pvs-volumes PROJECT [--subj SUB [SUB ...]] [--ses SES [SES ...]] [--thr THR]
+```
+
+- `PROJECT` — project directory name under `/mnt/cina`, e.g. `GLIMPSE_OSA`.
+- `--subj` — only run for these subjects, e.g. `--subj 001 002`.
+- `--ses` — only run for these sessions, e.g. `--ses 101 102`.
+- `--thr` — which `segment-pvs` threshold's mask to use, e.g. `0.25` for
+  `..._seg_pvs_thr_0.25.nii.gz` (default: 0.25).
+
+Example: `pixi run pvs-volumes GLIMPSE_OSA --thr 0.35`
+</details>
+
 ## Pipeline
 
 Steps are:
@@ -183,6 +232,10 @@ Steps are:
 6. fmriprep
 
 7. PVS segmentation: segcsvd_pvs (https://github.com/AICONSlab/segcsvd)
+
+8. Create WM masks for PVS volumes including basal ganglia (putamin, caudate, pallidus, thalamus) and surrounding region and remaining cerebral wm from aparc+aseg
+
+9. Tabulate PVS volumes per subject/session from the PVS segmentation and WM masks (`pixi run pvs-volumes`)
 
 ## CSF T1 Mapping 
 
