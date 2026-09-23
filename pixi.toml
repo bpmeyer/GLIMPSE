@@ -10,10 +10,9 @@ recon-all-parallel = "python recon_all_parallel.py"
 freesurfer-qa = "python freesurfer_qa.py"
 segment-pvs = "python segment_pvs.py"
 anat-masks = "python anat_masks.py"
-anat-masks-sas = "python anat_masks_sas_csf.py"
-cerebral-wm-pvs-mask = "python cerebral_wm_pvs_mask.py"
 pvs-volumes = "python pvs_volumes.py"
 heudiconv = "bash run_heudiconv.sh"
+philips-bids = "python update_philips_BIDs.py"
 download-xnat = "python downloadxnat.py"
 
 [dependencies]

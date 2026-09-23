@@ -8,6 +8,7 @@ import nibabel as nib
 from heudiconv import utils
 
 SLICE_TIME_SCRIPT = Path("/mnt/cina/lib/prepare_philips_multiband_slice_order_file.py")
+PROJECTS_ROOT = "/mnt/cina"
 
 
 def load_json(json_file):
@@ -96,8 +97,8 @@ def update_func_fmap_files(fmap_files, phase_encoding_direction):
         print(f"Updated func {phase_encoding_direction} fmap JSON: {json_file}")
 
 
-def update_philips_bids(project_dir, nifti_subdir="nifti"):
-    project_dir = Path(project_dir)
+def update_philips_bids(project, nifti_subdir="nifti"):
+    project_dir = Path(PROJECTS_ROOT) / project / "data"
     base_dir = project_dir / "sourcedata" / nifti_subdir
 
     bold_files = sorted(base_dir.glob("sub-*/ses-*/func/*bold.nii.gz"))
@@ -118,7 +119,9 @@ if __name__ == "__main__":
         description="Update Philips BIDS JSON sidecars (slice timing, phase encoding direction, "
         "B0 field metadata) for a BIDS project's sourcedata/nifti directory."
     )
-    parser.add_argument("project_dir", help="Path to the BIDS project directory")
+    parser.add_argument(
+        "project", help=f"Project directory name under {PROJECTS_ROOT}, e.g. AC"
+    )
     parser.add_argument(
         "--nifti-subdir",
         default="nifti",
@@ -126,4 +129,4 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    update_philips_bids(args.project_dir, nifti_subdir=args.nifti_subdir)
+    update_philips_bids(args.project, nifti_subdir=args.nifti_subdir)
