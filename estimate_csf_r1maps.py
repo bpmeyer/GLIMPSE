@@ -290,6 +290,7 @@ def create_R1_map(subject:str, session:str, project: str):
     t1map_data = t1map_im.get_fdata()
     r1map_data = np.divide(1000, t1map_data, where = (t1map_data != 0), out= np.zeros_like(t1map_data))
 
-    nib.save(nib.Nifti1Image(r1map_data, t1map_im.affine), op.join(out_dir, r1map_basename))
+    nib.save(nib.Nifti1Image(r1map_data, t1map_im.affine), 
+             op.join(out_dir, r1map_basename))
 
 
