@@ -16,8 +16,11 @@ if __name__ == "__main__":
     #subs = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, 'sub-*'))])
     subs = [f'00{i}' for i in range(1, 9)]
 
-    #lot_group_r1_maps(subs, PROJECT)
+    # plot_group_r1_maps(subs, PROJECT)
     plot_subject_csfseg(subject='004', project=PROJECT)
+    plot_group_csf_seg(subs, PROJECT)
+    # plot_subject_r1_map(subject='004', project=PROJECT)
+    plot_r1map_segmentation_boxplot(subs, project=PROJECT)
     # # Gather List of Subjects
     # for subject in subs:
     #     plot_subject_r1_map(subject, project)
