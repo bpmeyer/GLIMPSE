@@ -2,8 +2,8 @@
 matter vs. basal ganglia.
 
 For each subject/session, combines:
-  - segment_pvs.py's thresholded PVS mask (default 0.25 threshold) from
-    `{project}/data/derivatives/segcsvd/sub-*/ses-*/`.
+  - segment_pvs_drips.py's thresholded DRIPS PVS mask (default 0.1
+    threshold) from `{project}/data/derivatives/drips/sub-*/ses-*/`.
   - anat_masks.py's cerebral-wm-no-basal-ganglia_mask and basal-ganglia_mask
     (the latter includes its pallidum/putamen bounding-box blob -- see
     anat_masks.py's add_basal_ganglia_blob) from
@@ -13,7 +13,8 @@ All are in the subject's native T1w/rawavg space, so voxel counts translate
 directly to volume via each session's voxel size. Sessions missing any
 input, or where the masks don't share a voxel grid, are skipped.
 
-Writes one project-wide CSV to `{project}/data/derivatives/pvs_volumes.csv`,
+Writes one project-wide CSV to
+`{project}/data/derivatives/volume_outputs/pvs_volumes_drips_thr_{thr}.csv`,
 with columns subject, session, visit, total_vol, cerewm_vol, bg_vol,
 ventricle_vol, csf_vol:
   - visit: "v1" for ses-101/102, "v2" for ses-201/202.
@@ -31,7 +32,7 @@ The CSV is fully rebuilt each run from whatever subjects/sessions are found
 
 Usage:
     python pvs_volumes.py PROJECT [--subj 101 102] [--ses 101 102 201 202]
-    python pvs_volumes.py PROJECT --thr 0.35
+    python pvs_volumes.py PROJECT --thr 0.05
     pixi run pvs-volumes PROJECT
 """
 
@@ -55,7 +56,7 @@ def compute_pvs_volumes(subject, session, pvs_fn, cerewm_fn, bg_fn, ventricles_f
     -----------
         subject (str): Subject ID, without the "sub-" prefix.
         session (str): Session ID, without the "ses-" prefix.
-        pvs_fn (Path | str): segment_pvs.py's thresholded PVS mask.
+        pvs_fn (Path | str): segment_pvs_drips.py's thresholded PVS mask.
         cerewm_fn (Path | str): anat_masks.py's
             cerebral-wm-no-basal-ganglia_mask.
         bg_fn (Path | str): anat_masks.py's basal-ganglia_mask.
@@ -104,6 +105,7 @@ def compute_pvs_volumes(subject, session, pvs_fn, cerewm_fn, bg_fn, ventricles_f
     return {
         "subject": subject,
         "session": session,
+        "total_vol": total_vol,
         "cerewm_vol": cerewm_vol,
         "bg_vol": bg_vol,
         "ventricle_vol": ventricle_vol,
@@ -111,11 +113,11 @@ def compute_pvs_volumes(subject, session, pvs_fn, cerewm_fn, bg_fn, ventricles_f
     }
 
 
-def pvs_volumes_project(project, subjects=None, sessions=None, thr=0.25):
+def pvs_volumes_project(project, subjects=None, sessions=None, thr=0.1):
     '''Tabulate PVS volumes for every session in a project and write the
     project-wide CSV.
 
-    Wrapper that finds segment_pvs.py and anat_masks.py output for a
+    Wrapper that finds segment_pvs_drips.py and anat_masks.py output for a
     project, skips sessions that aren't ready, and writes one CSV row per
     remaining session.
 
@@ -128,13 +130,15 @@ def pvs_volumes_project(project, subjects=None, sessions=None, thr=0.25):
         sessions (list[str] | None): Only process these sessions, e.g.
             ["ses-01", "ses-02"] or ["01", "02"] (the "ses-" prefix is
             optional). Default None (all sessions).
-        thr (float): Which segment_pvs.py threshold's mask to use, e.g. 0.25
-            for `..._seg_pvs_thr_0.25.nii.gz`. Default 0.25.
+        thr (float): Which segment_pvs_drips.py threshold's mask to use, e.g.
+            0.1 for `..._drips_seg_thr_0.1.nii.gz`. Default 0.1.
     '''
     project_dir = Path(PROJECTS_ROOT) / project / "data"
-    segcsvd_root = project_dir / "derivatives" / "segcsvd"
+    drips_root = project_dir / "derivatives" / "drips"
     masks_root = project_dir / "derivatives" / "masks"
-    out_csv = project_dir / "derivatives" / "pvs_volumes.csv"
+    out_dir = project_dir / "derivatives" / "volume_outputs"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_csv = out_dir / f"pvs_volumes_drips_thr_{thr}.csv"
 
     if subjects:
         subj_patterns = [s if s.startswith("sub-") else f"sub-{s}" for s in subjects]
@@ -149,10 +153,10 @@ def pvs_volumes_project(project, subjects=None, sessions=None, thr=0.25):
         d
         for subj in subj_patterns
         for ses in ses_patterns
-        for d in segcsvd_root.glob(f"{subj}/{ses}")
+        for d in drips_root.glob(f"{subj}/{ses}")
         if d.is_dir()
     )
-    print(f"Found {len(session_dirs)} segcsvd subject/session directories")
+    print(f"Found {len(session_dirs)} drips subject/session directories")
 
     rows = []
     for session_dir in session_dirs:
@@ -160,7 +164,7 @@ def pvs_volumes_project(project, subjects=None, sessions=None, thr=0.25):
         ses = session_dir.parts[-1].split("-", 1)[1]
         prefix = f"sub-{sub}_ses-{ses}"
 
-        pvs_fn = session_dir / f"{prefix}_seg_pvs_thr_{thr}.nii.gz"
+        pvs_fn = session_dir / f"{prefix}_drips_seg_thr_{thr}.nii.gz"
         anat_dir = masks_root / f"sub-{sub}" / f"ses-{ses}" / "anat"
         cerewm_fn = anat_dir / f"{prefix}_cerebral-wm-no-basal-ganglia_mask.nii.gz"
         bg_fn = anat_dir / f"{prefix}_basal-ganglia_mask.nii.gz"
@@ -168,7 +172,7 @@ def pvs_volumes_project(project, subjects=None, sessions=None, thr=0.25):
         csf_fn = anat_dir / f"{prefix}_csf_mask.nii.gz"
 
         if not pvs_fn.exists():
-            print(f"SKIP {prefix}: missing {pvs_fn.name} (run segment_pvs.py --thr-only --seg-pvs-thr {thr} first)")
+            print(f"SKIP {prefix}: missing {pvs_fn.name} (run segment_pvs_drips.py --thresholds {thr} first)")
             continue
         if not cerewm_fn.exists():
             print(f"SKIP {prefix}: missing {cerewm_fn.name} (run anat_masks.py first)")
@@ -224,8 +228,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--thr",
         type=float,
-        default=0.25,
-        help="Which segment_pvs.py threshold's mask to use, e.g. 0.25 for ..._seg_pvs_thr_0.25.nii.gz (default: 0.25)",
+        default=0.1,
+        help="Which segment_pvs_drips.py threshold's mask to use, e.g. 0.1 for ..._drips_seg_thr_0.1.nii.gz (default: 0.1)",
     )
     args = parser.parse_args()
 
