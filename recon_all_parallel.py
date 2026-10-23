@@ -107,11 +107,14 @@ def recon_all_parallel(
         ses_patterns = [s if s.startswith("ses-") else f"ses-{s}" for s in sessions]
     else:
         ses_patterns = ["ses-*"]
+    # One T1w per session: run-01 when the project has multiple runs, or the
+    # only T1w when filenames carry no run entity.
     t1w_files = sorted(
         f
         for subj in subj_patterns
         for ses in ses_patterns
-        for f in base_dir.glob(f"{subj}/{ses}/anat/*run-01_T1w.nii.gz")
+        for f in base_dir.glob(f"{subj}/{ses}/anat/*_T1w.nii.gz")
+        if "_run-" not in f.name or "_run-01_" in f.name
     )
     print(f"Found {len(t1w_files)} T1w files")
 
