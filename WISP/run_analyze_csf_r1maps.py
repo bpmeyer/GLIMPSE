@@ -23,7 +23,10 @@ if __name__ == "__main__":
     # plot_group_csf_seg(subs, PROJECT)
     # plot_subject_r1_map(subject='004', project=PROJECT)
     # plot_r1map_segmentation_boxplot(subs, project=PROJECT)
-    plot_r1map_region_visit(subs, project=PROJECT, sleep_meta=sleep_meta_fn)
+    #plot_r1map_region_visit(subs, project=PROJECT, sleep_meta=sleep_meta_fn)
+    calc_csf_vol(subs, project=PROJECT)
+    # plot_csf_vol_by_visit(subs, project=PROJECT, sleep_meta=sleep_meta_fn)
+    plot_wm_thresholds(subs, project=PROJECT)
     # # Gather List of Subjects
     # for subject in subs:
     #     plot_subject_r1_map(subject, project)

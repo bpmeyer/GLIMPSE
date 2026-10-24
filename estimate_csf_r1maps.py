@@ -131,7 +131,7 @@ def convert_mgz_to_nifti(subject, project, freesurfer_home, reference_ses='01'):
 
     return
 
-def register_SE_T1_greedy(subject: str, project: str, greedy_fn:str, freesurfer_home, reference_ses: str ='01'):
+def register_SE_T1_greedy(subject: str, project: str, greedy_fn:str, freesurfer_home, ses: str ='01'):
 
     '''
     Function to register the first SE scan to the T1 space. 
@@ -148,20 +148,19 @@ def register_SE_T1_greedy(subject: str, project: str, greedy_fn:str, freesurfer_
         sereg_basename (nifti) : Registered reference SE image.
 
     '''
-
     ### Directories 
-    mixed_dir = op.join(project, 'sourcedata', 'nifti', f'sub-{subject}', f'ses-{reference_ses}', 'mixed')
-    mri_dir = op.join(project, 'derivatives', 'freesurfer', f'sub-{subject}_ses-{reference_ses}', 'mri')
-    out_dir = op.join(project, 'derivatives', 'csf_seg', f'sub-{subject}', f'ses-{reference_ses}')
+    mixed_dir = op.join(project, 'sourcedata', 'nifti', f'sub-{subject}', f'ses-{ses}', 'mixed')
+    mri_dir = op.join(project, 'derivatives', 'freesurfer', f'sub-{subject}_ses-{ses}', 'mri')
+    out_dir = op.join(project, 'derivatives', 'csf_seg', f'sub-{subject}', f'ses-{ses}')
 
     ### Filenames 
-    se0_basename = f'sub-{subject}_ses-{reference_ses}_acq-mixed_SE-modulus.nii.gz'
-    sereg_basename = f'sub-{subject}_ses-{reference_ses}_acq-mixed_SE-modulus_registered.nii.gz' 
-    xfm_basename = f'sub-{subject}_ses-{reference_ses}_acq-mixed.mat'
+    se0_basename = f'sub-{subject}_ses-{ses}_acq-mixed_SE-modulus.nii.gz'
+    sereg_basename = f'sub-{subject}_ses-{ses}_acq-mixed_SE-modulus_registered.nii.gz' 
+    xfm_basename = f'sub-{subject}_ses-{ses}_acq-mixed.mat'
     t1_basename = f'T1_ras.nii.gz' 
 
     # if not op.isfile(op.join(mri_dir, t1_basename)):
-    convert_mgz_to_nifti(subject, project, freesurfer_home, reference_ses)
+    convert_mgz_to_nifti(subject, project, freesurfer_home, f'{ses}')
 
     ### Setting up the greedy container 
     app_cmd = ['apptainer', 'exec', 
@@ -188,6 +187,8 @@ def register_SE_T1_greedy(subject: str, project: str, greedy_fn:str, freesurfer_
                 '-r', f'{out_dir}/{xfm_basename}']
 
     subprocess.run(app_cmd + register_cmd)
+
+    print(f'{out_dir}/{sereg_basename}')
 
     # Make sure the registered image is in RAS 
     sereg_img = nib.load(op.join(out_dir, sereg_basename))

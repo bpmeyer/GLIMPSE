@@ -24,19 +24,22 @@ if __name__ == "__main__":
         # Sorted list of Sessions for Subject
         sessions = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, f'sub-{subject}', 'ses-*'))]) 
 
-        # Get the T1 maps for Subject
-        for session in sessions: 
-            print(f'Estimating T1 Times for sub-{subject}, ses-{session}')
-            estimate_t1_times(subject, session, PROJECT)
+        # # Get the T1 maps for Subject
+        # for session in sessions: 
+        #     print(f'Estimating T1 Times for sub-{subject}, ses-{session}')
+        #     estimate_t1_times(subject, session, PROJECT)
         
-        print(f'Registering SE Images to T1 for sub-{subject}')
-        register_SE_T1_greedy(subject, PROJECT, greedy_fn = greedy_fn, freesurfer_home=FREESURFER_HOME)
+        for ses in sessions: 
 
-        print(f'Registering T1 Maps to Registered SE Image')
-        register_T1maps_greedy(subject, PROJECT, greedy_fn = greedy_fn)
+            print(f'Registering SE Images to T1 for sub-{subject} ses-{ses}')
+            register_SE_T1_greedy(subject, PROJECT, greedy_fn = greedy_fn, 
+                                  ses=ses, freesurfer_home=FREESURFER_HOME)
 
-        for session in sessions: 
-            print(f'Calculating R1 map for sub-{subject}, ses-{session}')
-            create_R1_map(subject, session, PROJECT)
+        # print(f'Registering T1 Maps to Registered SE Image')
+        # register_T1maps_greedy(subject, PROJECT, greedy_fn = greedy_fn)
+
+        # for session in sessions: 
+        #     print(f'Calculating R1 map for sub-{subject}, ses-{session}')
+        #     create_R1_map(subject, session, PROJECT)
 
 
