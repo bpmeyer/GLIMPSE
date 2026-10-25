@@ -35,9 +35,10 @@ that project's DICOMs to BIDS niftis, then the rest of the pipeline.
 | --- | --- |
 | `pixi run download-xnat` | Download a project's session data from XNAT |
 | `pixi run heudiconv` | Convert a project's DICOMs to BIDS niftis (after `download-xnat`) |
-| `pixi run philips-bids` | Update Philips BIDS JSON sidecars (slice timing, phase encoding, B0 field metadata) |
+| `pixi run philips-bids` | Update Philips BIDS JSON sidecars for func and DWI (slice timing, phase encoding, B0 field metadata, readout time) |
 | `pixi run recon-all-parallel` | Run FreeSurfer recon-all in parallel across subjects |
 | `pixi run freesurfer-qa` | Open subjects' FreeSurfer output in freeview for QA |
+| `pixi run fmriprep` | Run fMRIPrep (apptainer) on a project |
 | `pixi run segment-pvs` | Run segcsvd PVS segmentation over every session |
 | `pixi run anat-masks` | Make anatomical-space tissue masks from FreeSurfer aparc+aseg |
 | `pixi run pvs-volumes` | Tabulate PVS volume per subject/session from segcsvd + anat-masks output |
@@ -75,6 +76,12 @@ pixi run heudiconv PROJECT [ARGS...]
 
 - `PROJECT` — `osa` or `wisp`.
 
+For WISP, `run_heudiconv_wisp.sh` also runs `update_philips_BIDs.py` (in the
+same heudiconv container) right after each new session is converted, for that
+session only. The JSONs get fixed while the person who converted them still
+owns the files, so you don't need to run `philips-bids` separately for new
+WISP sessions.
+
 Example: `pixi run heudiconv osa`
 </details>
 
@@ -82,27 +89,50 @@ Example: `pixi run heudiconv osa`
 <summary><code>pixi run philips-bids</code></summary>
 
 Update Philips BIDS JSON sidecars for a project's `sourcedata/nifti` tree, after
-`heudiconv`. Philips DICOMs don't include slice timing or phase-encode
-polarity, and the fmap/func images aren't yet linked via metadata; this fills
-in `SliceTiming`, `PhaseEncodingDirection`, and `B0FieldSource`/
-`B0FieldIdentifier` for every BOLD run and its func fieldmaps.
+`heudiconv`. Philips DICOMs don't include slice timing, phase-encode polarity
+or a usable readout time, and the fieldmaps aren't linked to the images they
+correct. This fills in:
+
+| Files | Fields set |
+| --- | --- |
+| BOLD (`func/*bold`) | `SliceTiming` (multiband order), `PhaseEncodingDirection` `j`, `B0FieldSource` `acq-func-<sub>-<ses>` |
+| func fieldmaps (`fmap/*acq-func_dir-AP/PA*`) | `PhaseEncodingDirection` `j` (AP) / `j-` (PA), `B0FieldIdentifier` `acq-func-<sub>-<ses>` |
+| DWI (`dwi/*dwi`) | `PhaseEncodingDirection` `j`, `B0FieldSource` and `B0FieldIdentifier` `acq-dwi-<sub>-<ses>`, `TotalReadoutTime` |
+| DWI fieldmap (`fmap/*acq-dwi_dir-PA*`) | `PhaseEncodingDirection` `j-`, `B0FieldIdentifier` `acq-dwi-<sub>-<ses>`, `TotalReadoutTime` |
+
+`TotalReadoutTime` is copied from the `EstimatedTotalReadoutTime` that
+dcm2niix writes. The script runs inside the heudiconv container
+(`/mnt/cina/lib/heudiconv_latest.sif`), which provides heudiconv and nibabel.
 
 ```
-pixi run philips-bids PROJECT [--nifti-subdir NIFTI_SUBDIR]
+pixi run philips-bids PROJECT [NIFTI_SUBDIR] ["SUB SUB ..."]
 ```
 
-- `PROJECT` — project directory name under `/mnt/cina`, e.g. `GLIMPSE_OSA`.
-- `--nifti-subdir` — name of the `sourcedata` subdirectory holding the BIDS
-  nifti tree (default: `nifti`).
+- `PROJECT` — project directory name under `/mnt/cina`, e.g. `GLIMPSE_WISP`.
+- `NIFTI_SUBDIR` — name of the `sourcedata` subdirectory holding the BIDS
+  nifti tree (default: `nifti`). Must be given if you also pass subjects.
+- `"SUB SUB ..."` — only update these subjects, in quotes (default: all).
 
-Example: `pixi run philips-bids GLIMPSE_WISP`
+To pick sessions as well, use the WISP wrapper, which takes the script's own
+flags and runs it in the same container:
+
+```
+pixi run python WISP/run_update_philips_bids_wisp.py [--subjects SUB ...] [--sessions SES ...]
+```
+
+The JSONs are set read-only after writing, and you can only update files you
+own (or that are writable by you). Files converted by someone else need to be
+updated by that person.
+
+Example: `pixi run philips-bids GLIMPSE_WISP nifti "001 002"`
 </details>
 
 <details>
 <summary><code>pixi run recon-all-parallel</code></summary>
 
 Run FreeSurfer recon-all in parallel across subjects, for any BIDS project
-directory.
+directory. Uses one T1w per session: the `run-01` T1w, or the only T1w when
+filenames have no run label (e.g. WISP).
 
 ```
 pixi run recon-all-parallel PROJECT [--n-cpus N] [--use-t2] [--subj SUB [SUB ...]] [--ses SES [SES ...]]
@@ -136,6 +166,32 @@ pixi run freesurfer-qa PROJECT [--subj SUBJECT_ID [SUBJECT_ID ...]]
   that isn't already in `qa_log.csv`.
 
 Example: `pixi run freesurfer-qa GLIMPSE_OSA --subj sub-001_ses-01`
+</details>
+
+<details>
+<summary><code>pixi run fmriprep</code></summary>
+
+Run fMRIPrep (`/mnt/cina/lib/fmriprep-latest.sif`) with apptainer on a
+project, using its existing FreeSurfer output in `derivatives/freesurfer`.
+Writes to `derivatives/fmriprep`, with intermediate files in `work/fmriprep`.
+
+```
+pixi run fmriprep PROJECT [--sub SUB ...] [--ses SES ...] [--nthreads N] [--omp-nthreads N] [--mem-mb N] [--bids-filter-file FILE]
+```
+
+- `PROJECT` — project name under `/mnt/cina` (e.g. `GLIMPSE_WISP`, which
+  means `/mnt/cina/GLIMPSE_WISP/data`), or a full path to the project's data
+  directory.
+- `--sub` — only run these subjects (default: all).
+- `--ses` — only run these sessions (default: all).
+- `--nthreads` / `--omp-nthreads` / `--mem-mb` — total threads, threads per
+  process and memory budget (defaults: 32, 8, 160000).
+- `--bids-filter-file` — a JSON file of BIDS filters, passed to fMRIPrep.
+
+Outputs are in `MNI152NLin2009cAsym:res-2` and native anatomical space, plus
+CIFTI.
+
+Example: `pixi run fmriprep GLIMPSE_WISP --sub 001 002 --ses 01`
 </details>
 
 <details>
@@ -223,13 +279,13 @@ Steps are:
 
 2. convert dicoms to BIDS niftis using heudiconv image (`pixi run heudiconv`)
 
-3. Edit BIDS .json sidecars for Philips data. Philips dicoms do not include     slice timing, phase encode polarity and this info must be included for fmriprep. The fmap and func images must also be linked via the .json meta data.
+3. Edit BIDS .json sidecars for Philips data (`pixi run philips-bids`). Philips dicoms do not include slice timing, phase encode polarity or readout time, and this info must be included for fmriprep and DWI preprocessing. The fmap images must also be linked to the func and DWI images via the .json metadata. For WISP this runs automatically as part of step 2.
 
 4. Freesurfer recon-all with version 8. this version is faster, has a more accurate brain mask and provides csf masks. Output is saved in derivatives/freesufer/sub-*_ses-*. Freesurfer output is not BIDS complient but this structure is easily passed to fmriprep
 
 5. Freesurfer QA
 
-6. fmriprep
+6. fmriprep (`pixi run fmriprep`)
 
 7. PVS segmentation: segcsvd_pvs (https://github.com/AICONSlab/segcsvd)
 

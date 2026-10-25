@@ -8,12 +8,16 @@ PROJECT="/mnt/cina/GLIMPSE_WISP/data"
 DICOM_ROOT="${PROJECT}/sourcedata/dicom"
 OUT_ROOT="${PROJECT}/sourcedata/nifti"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(dirname "${SCRIPT_DIR}")"
 HEURISTIC="${SCRIPT_DIR}/WISP_heuristic.py"
 
 # Use apptainer by default.
 RUNTIME="apptainer"
 
 mkdir -p "${OUT_ROOT}"
+
+# Version of the dcm2niix bundled in the SIF, which is what heudiconv converts with.
+DCM2NIIX_VERSION="$("${RUNTIME}" exec --cleanenv "${SIF}" dcm2niix -v 2>&1 | tail -n 1 || true)"
 
 for subj_dir in "${DICOM_ROOT}"/*; do
     if [[ ! -d "${subj_dir}" ]]; then
@@ -56,7 +60,7 @@ for subj_dir in "${DICOM_ROOT}"/*; do
         echo "BIDS session: ses-${bids_session}"
         echo "DICOM path:   ${ses_dir}"
         echo "Output path:  ${OUT_ROOT}"
-        echo "dcm2niix version: $(dcm2niix -v)"
+        echo "dcm2niix version: ${DCM2NIIX_VERSION}"
         echo "============================================================"
 
         "${RUNTIME}" exec \
@@ -74,6 +78,18 @@ for subj_dir in "${DICOM_ROOT}"/*; do
                 -g custom \
                 -b \
                 --minmeta
+
+        # Fix up the Philips JSON sidecars (slice timing, phase encoding,
+        # B0 field metadata, readout time) for this session
+        "${RUNTIME}" exec \
+            --cleanenv \
+            --bind "${PROJECT}:${PROJECT}" \
+            --bind "${REPO_DIR}:${REPO_DIR}" \
+            --pwd "${REPO_DIR}" \
+            "${SIF}" \
+            python update_philips_BIDs.py "$(basename "$(dirname "${PROJECT}")")" \
+                --subjects "${bids_subject}" \
+                --sessions "${bids_session}"
 
     done
 done
