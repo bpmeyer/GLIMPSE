@@ -14,7 +14,13 @@ anat-masks = "python anat_masks.py"
 pvs-volumes = "python pvs_volumes.py"
 pvs-reproducibility = "python pvs_reproducibility.py"
 heudiconv = "bash run_heudiconv.sh"
-philips-bids = "python update_philips_BIDs.py"
+qsiprep = "bash WISP/run_qsiprep.sh"
+fmriprep = "bash fmriprep_apptainer.sh"
+philips-bids = { cmd = "apptainer exec --bind /mnt/cina /mnt/cina/lib/heudiconv_latest.sif python update_philips_BIDs.py {{ project }} --nifti-subdir {{ nifti_subdir }}{% if subjects %} --subjects {{ subjects }}{% endif %}", args = [
+    "project",
+    { arg = "nifti_subdir", default = "nifti" },
+    { arg = "subjects", default = "" },
+] }
 download-xnat = "python downloadxnat.py"
 
 [dependencies]

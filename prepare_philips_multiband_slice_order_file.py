@@ -1,4 +1,5 @@
 import argparse
+import sys
 
 def prepare_philips_multiband_slice_order_file(n_slices, multi_band):
     """

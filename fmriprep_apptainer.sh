@@ -3,10 +3,13 @@ set -euo pipefail
 
 # Run fMRIPrep with Apptainer/Singularity .sif for a BIDS project directory.
 #
-# Usage: fmriprep_apptainer.sh PROJECT_DIR [PARTICIPANT_LABEL...] [--ses SESSION_LABEL...] [--nthreads N] [--omp-nthreads N] [--mem-mb N] [--bids-filter-file FILE]
+# Usage: fmriprep_apptainer.sh PROJECT [--sub PARTICIPANT_LABEL...] [--ses SESSION_LABEL...] [--nthreads N] [--omp-nthreads N] [--mem-mb N] [--bids-filter-file FILE]
 #
-# PROJECT_DIR is expected to contain sourcedata/nifti and derivatives/freesurfer,
-# matching the layout used by recon_all_parallel.py. If no PARTICIPANT_LABEL is
+# PROJECT is either a project name under /mnt/cina (e.g. GLIMPSE_WISP, resolved
+# to /mnt/cina/GLIMPSE_WISP/data) or a full path to the project data directory.
+# That directory is expected to contain sourcedata/nifti and derivatives/freesurfer,
+# matching the layout used by recon_all_parallel.py. Participant labels can be
+# given with --sub or as bare positional arguments. If no PARTICIPANT_LABEL is
 # given, fMRIPrep is run over all participants found in the BIDS directory. If
 # no --ses is given, fMRIPrep is run over all of each participant's sessions.
 # If --bids-filter-file is given, that host-side JSON file is bind-mounted in
@@ -23,12 +26,15 @@ SESSIONS=()
 BIDS_FILTER_FILE=""
 
 if [[ $# -lt 1 ]]; then
-    echo "Usage: $0 PROJECT_DIR [PARTICIPANT_LABEL...] [--ses SESSION_LABEL...] [--nthreads N] [--omp-nthreads N] [--mem-mb N] [--bids-filter-file FILE]"
+    echo "Usage: $0 PROJECT [--sub PARTICIPANT_LABEL...] [--ses SESSION_LABEL...] [--nthreads N] [--omp-nthreads N] [--mem-mb N] [--bids-filter-file FILE]"
     exit 1
 fi
 
 PROJECT_DIR="$1"
 shift
+if [[ "$PROJECT_DIR" != */* ]]; then
+    PROJECT_DIR="/mnt/cina/${PROJECT_DIR}/data"
+fi
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -48,6 +54,13 @@ while [[ $# -gt 0 ]]; do
             BIDS_FILTER_FILE="$2"
             shift 2
             ;;
+        --sub|--participant-label)
+            shift
+            while [[ $# -gt 0 && "$1" != --* ]]; do
+                PARTICIPANTS+=("$1")
+                shift
+            done
+            ;;
         --ses|--session-label)
             shift
             while [[ $# -gt 0 && "$1" != --* ]]; do
@@ -64,7 +77,7 @@ done
 
 BIDS_DIR="${PROJECT_DIR}/sourcedata/nifti"
 OUT_DIR="${PROJECT_DIR}/derivatives/fmriprep"
-WORK_DIR="${PROJECT_DIR}/work/fmriprep_fl"
+WORK_DIR="${PROJECT_DIR}/work/fmriprep"
 FS_DIR="${PROJECT_DIR}/derivatives/freesurfer"
 
 mkdir -p "$OUT_DIR" "$WORK_DIR"
