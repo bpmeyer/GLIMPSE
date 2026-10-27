@@ -19,13 +19,14 @@ if __name__ == "__main__":
 
     ### Gathering list of subjects 
     nifti_dir = op.join(PROJECT, 'sourcedata', 'nifti')
-    #subs = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, 'sub-*'))])
-    subs = [f'00{i}' for i in range(1, 9)]
+    subs = sorted([op.basename(s).split('-')[1] for s in glob(op.join(nifti_dir, 'sub-*'))])
+    subs = [s for s in subs if int(s) <= 18 and s not in ['013', '017', '023']]
 
-
-    # calc_csf_vol(subs, project=PROJECT)
+    #calc_csf_vol(subs, project=PROJECT)
     #plot_wm_thresholds(sleep_meta_fn, vol_df_fn, project=PROJECT)
-    #plot_csf_vol_by_visit(subs, project=PROJECT, sleep_meta=sleep_meta_fn)
-    #calc_avg_t1_time(subs, project=PROJECT)
-    #plot_csf_t1_by_visit(subs, project=PROJECT, sleep_meta=sleep_meta_fn)
-    plot_t1map_distributions(sleep_meta_fn, project=PROJECT)
+    # plot_csf_vol_by_visit(subs, project=PROJECT, sleep_meta=sleep_meta_fn)
+    calc_avg_t1_time(subs, project=PROJECT)
+    plot_csf_t1_by_visit(subs, project=PROJECT, sleep_meta=sleep_meta_fn)
+    #plot_t1map_distributions(sleep_meta_fn, project=PROJECT)
+    # plot_csf_vols_over_t1_image(subs, project=PROJECT, sleep_meta_fn = sleep_meta_fn)
+    plot_csf_t1map_over_t1_image(subs, project=PROJECT, sleep_meta_fn = sleep_meta_fn)

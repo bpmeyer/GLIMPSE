@@ -17,7 +17,7 @@ import shlex
 
 FREESURFER_HOME = "/usr/local/freesurfer/8.0.0"
 
-def estimate_t1_times(subject: str, session: str, project: str):
+def estimate_t1_times(subject: str, session: str, project: str, force:bool=False):
 
     '''Function to estimate the T1 Times using gmri2fem
     
@@ -51,13 +51,18 @@ def estimate_t1_times(subject: str, session: str, project: str):
                  f'--IR', f'{ir_fname}', 
                  f'--meta', f'{meta_fname}', 
                  f'--output', f'{out_fname}', 
-                 f'--postprocessed', f'{post_fname}'] 
+                 f'--postprocessed', f'{post_fname}', 
+                 f'--t1_high', '10000'] 
 
     ### If the metadata file is not present, make it 
     if not op.isfile(meta_fname): 
         make_mixed_meta(subject, session, meta_fname, project)
 
-    return subprocess.run(['gmri2fem', 'mri', 'mixed-t1map'] + shell_cmd)
+    if not op.isfile(out_fname) or force: 
+        try: 
+            res = subprocess.run(['gmri2fem', 'mri', 'mixed-t1map'] + shell_cmd, capture_output=True, text=True)
+        except: 
+            print(res.stderr)
 
 def make_mixed_meta(subject:str, session: str, meta_fname:str, project:str): 
 

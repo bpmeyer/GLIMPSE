@@ -19,6 +19,7 @@ from matplotlib.lines import Line2D
 import matplotlib.patches as mpatches
 from anat_masks import _resample_to_rawavg, run_with_freesurfer_env
 from estimate_csf_r1maps import estimate_t1_times
+from cmap import Colormap
 
 def create_cranial_mask(sub:str, ses:str, cran_mask_fn, t1_fn, force=False): 
 
@@ -121,6 +122,7 @@ def calc_csf_vol(subjects, project):
     for sub in subjects: 
         print(f'\nCalculating CSF Vols for Subject: {sub}')
         for ses in range(1, 5, 1): 
+            if sub == '009' and ses == 1: continue
             print(f'\tSession 0{ses}')
             ### FS Segmentation Dir
             fs_dir = op.join(project, 'derivatives', 'freesurfer', f'sub-{sub}_ses-0{ses}', 'mri')
@@ -340,7 +342,7 @@ def plot_csf_vol_by_visit(subs, project, sleep_meta):
 
     for ax in axes: 
         ax.get_legend().remove()
-    fig.legend(handles, labels, loc='lower center', title='Subject', ncol=8)    
+    fig.legend(handles, labels, loc='lower center', title='Subject', ncol=13)    
 
     fig.suptitle(f'CSF Volume Changes with Partial Sleep Deprivation')
     plt.tight_layout()
@@ -353,7 +355,7 @@ def plot_csf_vol_by_visit(subs, project, sleep_meta):
 def calc_avg_t1_time(subs, project):
     
     t1_df_fn = op.join('/mnt/home/jdromero/Documents', 'wisp_group_t1_avgs.csv')
-    t1_df = pd.DataFrame(columns=['Subject', 'Session', 'MeanT1'])
+    t1_df = pd.DataFrame(columns=['Subject', 'Session', 'MeanT1', 'MinT1', 'MaxT1'])
 
     for sub in subs: 
         for ses in range(1, 5): 
@@ -368,8 +370,11 @@ def calc_avg_t1_time(subs, project):
             
             reg_t1_map_fn = op.join(vol_dir, f'sub-{sub}_ses-0{ses}_acq-mixed_T1map_postproc_native.nii.gz')
 
-            if not op.isfile(csf_t1_fn): 
-                estimate_t1_times(sub, ses, project)
+            try: 
+                estimate_t1_times(sub, f'0{ses}', project, force=False)
+                print(f'Estimated T1 Times for Sub-{sub} Ses-0{ses}')
+            except: 
+                continue
             
             ### Register the T1 Map to Native 
             register_csf_t1_to_native(sub=sub, ses=f'0{ses}', t1_fn=t1_fn, 
@@ -384,16 +389,22 @@ def calc_avg_t1_time(subs, project):
 
             cran_mask = nib.load(cran_mask_fn)
             masked_t1_map = t1_map_im.get_fdata() * cran_mask.get_fdata()
+            masked_t1_map = np.where(masked_t1_map > 10000, 0, masked_t1_map)
             masked_t1_map_im = nib.Nifti1Image(masked_t1_map, t1_map_im.affine, dtype=np.int16)
             nib.save(masked_t1_map_im, 
                      op.join(vol_dir, f'sub-{sub}_ses-0{ses}_acq-mixed_T1map_postproc_native_masked.nii.gz'))
             MeanT1 = np.mean(masked_t1_map, where = masked_t1_map != 0)
+            MinT1 = np.min(masked_t1_map, where = masked_t1_map != 0, initial=np.inf)
+            MaxT1 = np.max(masked_t1_map, where = masked_t1_map != 0, initial=-np.inf)
 
-            ses_dict = {'Subject': sub, 'Session': ses, 'MeanT1': np.round(MeanT1, 2)}
+            ses_dict = {'Subject': sub, 'Session': ses, 
+                        'MeanT1': np.round(MeanT1, 2), 
+                        'MinT1': np.round(MinT1, 2), 
+                        'MaxT1': np.round(MaxT1, 2)}
 
             t1_df = pd.concat([t1_df, pd.DataFrame([ses_dict])], ignore_index=True)
-
     t1_df.to_csv(t1_df_fn, index=False)
+    print(t1_df)
 
 def plot_csf_t1_by_visit(subs, project, sleep_meta): 
 
@@ -427,13 +438,13 @@ def plot_csf_t1_by_visit(subs, project, sleep_meta):
                 labels = new_x_ticks)
     
     handles, labels = ax.get_legend_handles_labels()
-    fig.legend(handles, labels, loc='lower center', title='Subject', ncol=8)
+    fig.legend(handles, labels, loc='lower center', title='Subject', ncol=7)
     ax.get_legend().remove()
     ax.set_ylabel('T1 (ms)', visible=True)
 
     fig.suptitle(f'CSF T1 Changes with Partial Sleep Deprivation')
     plt.tight_layout()
-    plt.subplots_adjust(bottom=0.125)
+    plt.subplots_adjust(bottom=0.15)
     
     plot_fn = op.join(plot_dir, 'csf_t1_changes_by_method_and_sleep_condition.png') 
     plt.savefig(plot_fn, dpi=300)
@@ -491,6 +502,145 @@ def plot_t1map_distributions(sleep_meta_fn:str, project:str):
     plt.subplots_adjust(left=0.065)
     plt.savefig(plot_fn, dpi=300)
     print(plot_fn) 
+
+def plot_csf_vols_over_t1_image(subs, project, sleep_meta_fn):
+
+    sleep_df = pd.read_csv(sleep_meta_fn)
+    sleep_df = sleep_df[sleep_df['Stim_Condition'] == 0]
+
+    for name, grp in sleep_df.groupby(['ID']): 
+        sub = f'00{name[0]}' if int(name[0]) < 10 else f'0{name[0]}'
+        if int(sub) > 18: continue
+
+        ses_dict = {'Full': grp.loc[grp['Full_sleep'] == 0, 'Visit'].iloc[0], 
+                    'Restricted': grp.loc[grp['Full_sleep'] == 1, 'Visit'].iloc[0]}
+        fig, axes = plt.subplots(1, 2, figsize=(16, 9))
+        for con, ses in ses_dict.items(): 
+
+            ax = axes[0] if con == 'Full' else axes[1]
+
+            vol_dir = op.join(project, 'derivatives', 'csf_vol', f'sub-{sub}', f'ses-0{ses}')  
+            cran_masked_t1_fn = op.join(vol_dir, 
+                                f'sub-{sub}_ses-0{ses}_desc-t1w_masked_cranium.nii.gz') 
+            try: 
+                t1_dat = nib.load(cran_masked_t1_fn).get_fdata()
+            except: 
+                continue
             
+            plot_dir = op.join(project, 'derivatives', 'csf_vol', f'sub-{sub}', 'figures')
+            os.makedirs(plot_dir, exist_ok=True)
+
+            plot_fn = op.join(plot_dir, f'sub-{sub}_csf_signal_full_and_restricted.svg')
+
+            nzero_idxs = np.argwhere(t1_dat != 0)
+
+            min_idx = nzero_idxs.min(axis=0)
+            max_idx = nzero_idxs.max(axis=0) + 1  # Add 1 because slicing is exclusive at the end
+
+            x_min, y_min, z_min = min_idx
+            x_max, y_max, z_max = max_idx
+
+            t1_dat = t1_dat[x_min-3:x_max+3, 
+                            y_min-3:y_max+3, 
+                            z_min-3:z_max+3]
+
+            slice_idx = t1_dat.shape[0] // 2 + 7
+            pslice = t1_dat[slice_idx, :, :]
+            ax.imshow(np.rot90(pslice, k=3), cmap='gray', origin='lower') 
+
+            ax.set_title(f'{con.title()}: x={slice_idx}', fontsize=16)
+
+            handles, labels = [], []
+            for thresh, c in zip(list(range(2, 5)), ('Reds', 'Oranges','Blues')): 
+                
+                se_fn = op.join(vol_dir, 
+                                 f'sub-{sub}_ses-0{ses}_acq-mixed_SE-modulus_registered_csf_mask_{thresh}SD.nii.gz')
+                se_dat = nib.load(se_fn).get_fdata()
+                se_dat[se_dat == 0] = np.nan
+                se_dat = se_dat[x_min-3:x_max+3, 
+                                y_min-3:y_max+3, 
+                                z_min-3:z_max+3]
+                pslice = se_dat[slice_idx, :, :]
+                ax.imshow(np.rot90(pslice, k=3), cmap=c + '_r', origin='lower') 
+                ax.set(xlabel=None, ylabel=None)
+                handles.append(mpatches.Patch(color=c[:-1].lower()))
+                labels.append(f'{thresh}SD Threshold')
+            ax.set_axis_off()
+
+        fig.legend(handles, labels, loc='upper right', ncols=1, fontsize=14) 
+        plt.suptitle(f'Sub-{sub} CSF Masks by SD Threshold', fontsize=22)
 
 
+        plt.tight_layout()
+        plt.savefig(plot_fn, dpi=300)
+        print(plot_fn)
+
+def plot_csf_t1map_over_t1_image(subs, project, sleep_meta_fn):
+
+    sleep_df = pd.read_csv(sleep_meta_fn)
+    sleep_df = sleep_df[sleep_df['Stim_Condition'] == 0]
+
+    for name, grp in sleep_df.groupby(['ID']): 
+        sub = f'00{name[0]}' if int(name[0]) < 10 else f'0{name[0]}'
+        if int(sub) > 18: continue
+
+        ses_dict = {'Full': grp.loc[grp['Full_sleep'] == 0, 'Visit'].iloc[0], 
+                    'Restricted': grp.loc[grp['Full_sleep'] == 1, 'Visit'].iloc[0]}
+        fig, axes = plt.subplots(1, 2, figsize=(16, 9))
+        for con, ses in ses_dict.items(): 
+
+            ax = axes[0] if con == 'Full' else axes[1]
+
+            vol_dir = op.join(project, 'derivatives', 'csf_vol', f'sub-{sub}', f'ses-0{ses}')  
+            cran_masked_t1_fn = op.join(vol_dir, 
+                                f'sub-{sub}_ses-0{ses}_desc-t1w_masked_cranium.nii.gz') 
+            try: 
+                t1_dat = nib.load(cran_masked_t1_fn).get_fdata()
+            except: 
+                continue
+            
+            plot_dir = op.join(project, 'derivatives', 'csf_vol', f'sub-{sub}', 'figures')
+            os.makedirs(plot_dir, exist_ok=True)
+
+            plot_fn = op.join(plot_dir, f'sub-{sub}_csf_t1map_over_t1.svg')
+
+            nzero_idxs = np.argwhere(t1_dat != 0)
+
+            min_idx = nzero_idxs.min(axis=0)
+            max_idx = nzero_idxs.max(axis=0) + 1  # Add 1 because slicing is exclusive at the end
+
+            x_min, y_min, z_min = min_idx
+            x_max, y_max, z_max = max_idx
+
+            t1_dat = t1_dat[x_min-3:x_max+3, 
+                            y_min-3:y_max+3, 
+                            z_min-3:z_max+3]
+
+            slice_idx = t1_dat.shape[0] // 2 + 7
+            pslice = t1_dat[slice_idx, :, :]
+            ax.imshow(np.rot90(pslice, k=3), cmap='gray', origin='lower') 
+
+            ax.set_title(f'{con.title()}: x={slice_idx}', fontsize=16)
+
+            t1_map_fn = op.join(vol_dir, f'sub-{sub}_ses-0{ses}_acq-mixed_T1map_postproc_native_masked.nii.gz')
+            t1_map_dat = nib.load(t1_map_fn).get_fdata()
+            t1_map_dat[t1_map_dat == 0] = np.nan
+            t1_map_dat = t1_map_dat[x_min-3:x_max+3, 
+                                    y_min-3:y_max+3, 
+                                    z_min-3:z_max+3]
+            pslice = t1_map_dat[slice_idx, :, :]
+            im = ax.imshow(np.rot90(pslice, k=3), cmap=Colormap("crameri:lipari").to_mpl(), vmin=0, vmax=10000, origin='lower')
+            cbar = fig.colorbar(im, ax=ax, orientation='horizontal')
+            cbar.set_label('T1 (ms)', fontsize=14, labelpad=15)
+
+
+            ax.set(xlabel=None, ylabel=None)
+
+            ax.set_axis_off()
+
+        plt.suptitle(f'Sub-{sub} CSF T1Maps', fontsize=22)
+
+
+        plt.tight_layout()
+        plt.savefig(plot_fn, dpi=300)
+        print(plot_fn)
